@@ -37,6 +37,7 @@ Socket::Socket(IpcType type):_ipcType(type)
 
 ConnHandler::ConnHandler(int sockId):_sockId(sockId)
 {
+    exit = false;
     std::stringstream sap;
     sap<<_sockId;
     _sap = sap.str();
@@ -54,7 +55,7 @@ void ConnHandler::run()
 {
     const int maxSize = 1024;
     unsigned char rxbyte[maxSize];
-    for(;;){
+    while(!exit){
         int len = 0;
         if((len = read(_sockId, rxbyte, maxSize)) > 0) {
             RxDataEvent rx(_sap, rxbyte, len);
@@ -66,6 +67,8 @@ void ConnHandler::run()
         Event* Ev = pullOut(10);//max 1/100 di secondo di attesa
         if(Ev){
             std::string eventName = Ev->eventName();
+            ziblog("received event %s", eventName.c_str());
+            if(eventName == StopThreadEvent::StopThreadEventName) exit = true;
             if(eventName == TxDataEvent::txDataEventName(_sap)) {
                 TxDataEvent* w = (TxDataEvent *)Ev;
                 write(_sockId, w->buf(), w->len());

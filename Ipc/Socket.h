@@ -51,6 +51,7 @@ class ConnHandler : public Thread {
     friend class Client;
     int _sockId;
     std::string _sap;//serve per taggare univocamente gli eventi relativi ad uno specifico socket
+    bool exit;
     void run();
     ConnHandler(int sockId);//ConnHandler non deve essere istanziabile, ma solo ottenibile effettuando una connessione.
 public:
