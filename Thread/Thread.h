@@ -59,6 +59,13 @@ class Thread {
 private:
     pthread_t _th;
     pthread_mutex_t _lockQueue;
+    pthread_mutex_t _standAloneGuarantee;//mutex utilizzato per garantire l'unicità del thread associato alla classe.
+                                         //viene utilizzato dentro il metodo Start() per prevenire i danni causati da
+                                         //un'eventuale doppia chiamata di Start(). Infatti se ciò accadesse, verrebbero
+                                         //creati due thread indipendenti e identici (stesso ciclo run()) ma che condivi-
+                                         //derebbero gli stessi dati all'interno della classe con corse, problemi di 
+                                         //scrittori/lettori, starvation, deadlock...
+    bool _set;
     pthread_cond_t _thereIsAnEvent;
     virtual void run()=0;
     static void *ThreadLoop(void * arg);
@@ -120,7 +127,11 @@ public:
     void Stop();//N.B.: non deve mai essere chiamata dentro run()
     void Join();//N.B.: non deve mai essere chiamata dentro run()
     void register2Event(std::string eventName);
-private://secondo la "Law of The Big Three" del c++, se si definisce uno tra: distruttore, costruttore di copia o operatore di assegnazione, probabilmente occorrera' definire anche i due restanti (e non usare quelli di default cioe`!). Tuttavia in questo caso un Thread non puo` essere assegnato o copiato, per cui il rispetto della suddetta regola avviene rendendoli privati in modo da prevenirne un utilizzo involontario!
+private:
+    //secondo la "Law of The Big Three" del c++, se si definisce uno tra: distruttore, costruttore di copia o operatore di 
+    //assegnazione, probabilmente occorrera' definire anche i due restanti (e non usare quelli di default cioe`!). Tuttavia 
+    //in questo caso un Thread non puo` essere assegnato o copiato, per cui il rispetto della suddetta regola avviene 
+    //rendendoli privati in modo da prevenirne un utilizzo involontario!
     Thread(const Thread &);//non ha senso ritornare o passare come parametro un thread per valore
     Thread & operator = (const Thread &);//non ha senso assegnare un thread per valore
 };

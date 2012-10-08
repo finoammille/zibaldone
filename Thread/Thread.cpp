@@ -54,7 +54,9 @@ void Event::sendEventTo(Thread* target){target->pushIn(clone());}
 Thread::Thread()
 {
     _th = 0;
+    _set=false;
     pthread_mutex_init(&_lockQueue, NULL);
+    pthread_mutex_init(&_standAloneGuarantee, NULL);
     pthread_cond_init(&_thereIsAnEvent, NULL);
 }
 
@@ -66,7 +68,19 @@ void * Thread::ThreadLoop(void * arg)
     return NULL;
 }
 
-void Thread::Start(){pthread_create (&_th, NULL, ThreadLoop, this);}
+//NOTA IMPORTANTE: occorre garantire che il thread sia creato UNA VOLTA SOLA per ogni oggetto di tipo thread istanziato.
+//in caso contrario infatti avrei più thread indipendenti che però condividerebbero gli stessi dati incapsulati nella
+//classe associata al thread. Occorre quindi prevenire che una doppia chiamata a Start sullo stesso oggetto comporti
+//la creazione di due thread (il thread va creato solo LA PRIMA VOLTA che viene chiamato il metodo Start().
+void Thread::Start()
+{
+    pthread_mutex_lock(&_standAloneGuarantee);
+    if(!_set) {
+        pthread_create (&_th, NULL, ThreadLoop, this);
+        _set=true;
+    }
+    pthread_mutex_unlock(&_standAloneGuarantee);
+}
 
 //NOTA IMPORTANTE: Join() non deve mai essere chiamata dentro run(). Infatti Join() chiama pthread_join che si blocca in attesa che il thread termini. Tuttavia questo
 //non potrà mai terminare se è bloccato in attesa! Analogo discorso vale per Stop() dato che chiama al suo interno Join(). Effettivamente, è un'evidente contraddizione
