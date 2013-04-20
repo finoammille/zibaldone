@@ -27,34 +27,27 @@
 #include "Log.h"
 #include "Thread.h"
 
-//-------------------------------------------------------------------------------------------
-//EVENTO scadenza timer
-class TimeoutEvent : public Event {
-    Thread* _target;
-    Event* clone() const{return new TimeoutEvent(*this);}
-public:
-    TimeoutEvent(Thread* target, std::string timerName):Event(TimeoutEventName),_target(target),timerName(timerName){}
-    const static std::string TimeoutEventName;
-    void notify(){sendEventTo(_target);}
-    std::string timerName;
-};
+namespace Z
+{
 //-------------------------------------------------------------------------------------------
 //NOTA: la classe Timer implementa sostanzialmente una "sveglia". L'utilizzatore, istanzia un oggetto Timer, al quale
-//assegna un nome, Alla scadenza del timer, viene inviato un evento "timeout" associato al nome della sveglia.
+//assegna un nome, Alla scadenza del timer, viene emesso un evento avente il nome assegnato alla sveglia.
+//Le regole sono le solite: chi vuol ricevere l'evento deve registrarsi sull'Id (nome) dell'evento
 class Timer{ 
-    Thread* _target;
     timer_t _tId;
+    const std::string timerId;
     int _duration;
     bool _running;
     pthread_mutex_t _lock;
     static void onTimeout(sigval_t val);
 public:
-    const std::string timerName;
-    Timer(std::string timerName, Thread* target, int duration=-1);
+    std::string getTimerId() const {return timerId;}
+    Timer(const std::string& timerId, int duration=-1);
     ~Timer();
     void Start(int mSec=-1);//Nota: il valore di default (-1) indica che il timer va armato con la durata già specificata nella variabile _duration
     void Stop();
 };
 //-------------------------------------------------------------------------------------------
+}//namespace Z
 #endif	/* _TIMER_H */
 

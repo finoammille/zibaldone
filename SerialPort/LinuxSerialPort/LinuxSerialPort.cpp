@@ -21,10 +21,13 @@
 
 #include "LinuxSerialPort.h"
 
-bool SerialPort::Open(std::string portName)
+namespace Z 
+{
+//-------------------------------------------------------------------------------------------
+bool SerialPort::Open(const std::string& portName)
 {
     _fd = open(portName.c_str(), O_RDWR | O_NOCTTY | O_NDELAY);
-    if(_fd < 0) ziblog("error (code = %d) while trying to open port %s", _fd, portName.c_str());
+    if(_fd < 0) ziblog(LOG::ERROR, "error (code = %d) while trying to open port %s", _fd, portName.c_str());
     else fcntl(_fd, F_SETFL, 0);
     return (_fd);
 }
@@ -49,7 +52,7 @@ int SerialPort::Write(const unsigned char* data, const int len)
 {
     int n = write(_fd, data, len);
     if(n<0) {
-        ziblog("Error on write of %d bytes", len);
+        ziblog(LOG::ERROR, "Error on write of %d bytes", len);
         throw SerialPortException("WRITE ERROR");
     }
     return n;
@@ -63,7 +66,7 @@ std::vector<unsigned char> SerialPort::Read()
     ioctl(_fd, FIONREAD, &rxByteNum);
     for(int i = 0; i<rxByteNum; i++){
         if((read(_fd, &rxByte, 1))<0) {
-            ziblog("SERIAL ERROR");
+            ziblog(LOG::WARNING, "SERIAL ERROR");
             throw SerialPortException("READ ERROR");
         }
         buffer.push_back(rxByte);
@@ -92,7 +95,7 @@ void SerialPort::SetBaudRate(int rate)
         case 38400: rate = B38400; break;
         case 57600: rate = B57600; break;
         case 115200: rate = B115200; break;
-        default: ziblog("SetBaudRate = %d failed", rate);
+        default: ziblog(LOG::ERROR, "SetBaudRate = %d failed", rate);
     }
     //adds new settings
     _serialPortSettings.c_cflag &= ~(CBAUD | CBAUDEX);
@@ -138,7 +141,7 @@ void SerialPort::SetParity(SerialPort::Parity parity)
             _serialPortSettings.c_iflag &= ~(IGNPAR);//don't ignore parity errors
             _serialPortSettings.c_iflag &= ~(PARMRK);//and don't mark them either
             break;
-        default: ziblog("SetParityBits = %d failed (is it a wrong value?)", parity);
+        default: ziblog(LOG::ERROR, "SetParityBits = %d failed (is it a wrong value?)", parity);
     }
 }
 
@@ -159,7 +162,7 @@ void SerialPort::SetDataBits(int dataBits)
             _serialPortSettings.c_cflag = (_serialPortSettings.c_cflag & ~CSIZE) | CS8;
             _serialPortSettings.c_iflag &= ~ISTRIP;
             break;
-        default: ziblog("SetDataBits = %d failed (is it a wrong value?)", dataBits);
+        default: ziblog(LOG::ERROR, "SetDataBits = %d failed (is it a wrong value?)", dataBits);
     }
 }
 
@@ -167,7 +170,7 @@ void SerialPort::SetStopBits(int stopBits)
 {
     if(stopBits == 1) _serialPortSettings.c_cflag &= ~CSTOPB;
     else if(stopBits == 2) _serialPortSettings.c_cflag |= CSTOPB;
-    else ziblog("SetStopBits = %d failed (is it a wrong value?)", stopBits);
+    else ziblog(LOG::ERROR, "SetStopBits = %d failed (is it a wrong value?)", stopBits);
 }
 
 void SerialPort::SetLocal(bool isLocal)
@@ -227,7 +230,7 @@ void SerialPort::SetRaw(bool isRaw, cc_t rawlen, cc_t rawtimeout)
 }
 
 SerialPort::SerialPort(
-    std::string portName,
+    const std::string& portName,
     int baudRate,
     SerialPort::Parity parity,
     int dataBits,
@@ -248,6 +251,9 @@ SerialPort::SerialPort(
     SetFlowControl(flwctrl);
     SetRaw(true, 0, 10);
     tcsetattr(_fd,TCSANOW,&_serialPortSettings);
+    usleep(10000);//10 msec per dare tempo alla seriale. In genere non serve, ma incerti casi (x es. seriali ftdi su hub usb) e` necessario
 }
 
 SerialPort::~SerialPort(){close(_fd);}
+//-------------------------------------------------------------------------------------------
+}//namespace Z

@@ -21,53 +21,60 @@
 
 #include "Log.h"
 
-std::string LOG::logCmd::logCmdEventName = "logCmd";
+namespace Z
+{
+//-------------------------------------------------------------------------------------------
 LOG* LOG::_instance = NULL;
 bool LOG::_isRunning = false;
+LOG::Level LOG::level = LOG::ERROR;
 
 LOG::LOG()
 {
     exit = false;
     std::string logFileName = "log";
-    register2Event(LOG::logCmd::logCmdEventName);//autoregistrazione per le richieste di log
-    logFile.open(logFileName.c_str(), std::ios::app);
-}
-
-void LOG::startLogging()
-{
-    if(!_isRunning){
-        Start();
-        _isRunning = true;
-    }
-}
-
-void LOG::stopLogging()
-{
-    if(_isRunning) {
-        Stop();
-        _isRunning = false;
-    }
-}
-
-void LOG::write(std::string logMsg)
-{
-    if(!_isRunning) {
-        std::cerr<<"Can't log: logger is not running!\n";
-        return;
-    }
     time_t now;
     time(&now);
     struct tm* current = localtime(&now);
     std::stringstream tmp;
-    tmp<<std::setw(2)<<current->tm_mday<<std::setfill('0')//day
-    <<"-"<<std::setfill('0')<<std::setw(2)<<(current->tm_mon+1)//month
-    <<"-"<<(current->tm_year-100)<<" "//year
-    <<std::setfill('0')<<std::setw(2)<<current->tm_hour//hour
-    <<":"<<std::setfill('0')<<std::setw(2)<<current->tm_min//min
-    <<":"<<std::setfill('0')<<std::setw(2)<<current->tm_sec<<", ";//sec
-    std::string date = tmp.str();
-    logCmd log(date + logMsg);
-    log.emitEvent();
+    tmp<<"_"<<std::setw(2)<<std::setfill('0')<<current->tm_mday//day
+    <<"-"<<std::setw(2)<<std::setfill('0')<<(current->tm_mon+1)//month
+    <<"-"<<std::setw(2)<<std::setfill('0')<<(current->tm_year-100);//year
+    logFileName += tmp.str();
+    register2Event("logCmdEvent");//autoregistrazione per le richieste di log
+    logFile.open(logFileName.c_str(), std::ios::app);
+}
+
+void LOG::set(Level logLev, bool showLogOnConsole)
+{
+    if(!_instance) _instance=new LOG();
+    _instance->level=logLev;
+    _instance->_showLogOnConsole=showLogOnConsole;
+    if(!_instance->_isRunning){
+        _instance->Start();
+        _instance->_isRunning = true;
+    }
+}
+
+void LOG::disable()
+{
+    if(!_instance) return;//non c'e' nulla da disabilitare!
+    if(_instance->_isRunning) {
+        _instance->Stop();
+        _instance->_isRunning = false;
+    }
+    _instance->logFile.close();
+    delete _instance;
+    _instance=NULL;
+}
+
+void LOG::enqueueMessage(LOG::Level level, const std::string& log)
+{
+    if(level >= LOG::level) {
+        std::vector<unsigned char> logMsg;
+        for(unsigned int i=0; i<log.size(); i++) logMsg.push_back((unsigned char)log[i]);
+        Event logCmd("logCmdEvent", logMsg); 
+        logCmd.emitEvent();
+    }
 }
 
 void LOG::run()
@@ -75,22 +82,16 @@ void LOG::run()
     while(!exit){
         Event* Ev = pullOut(10);//max 10 msec di attesa
         if(Ev){
-            std::string eventName = Ev->eventName();
-            if(eventName == StopThreadEvent::StopThreadEventName) exit = true; 
-            else if(eventName == LOG::logCmd::logCmdEventName){
-                logCmd* log = (logCmd *) Ev;
-                logFile<<log->logMsg<<std::endl;
-                std::cerr<<log->logMsg<<std::endl;
-            } else std::cerr<<"LOG THREAD HAS RECEIVED AN UNEXPECTED EVENT ("<<eventName<<")\n"; 
+            std::string eventId = Ev->eventId();
+            if(eventId == StopThreadEventId) exit = true; 
+            else if(eventId == "logCmdEvent") {
+                std::string logMsg = std::string((const char*)Ev->buf(), Ev->len());
+                logFile<<logMsg<<std::endl;
+                if(_showLogOnConsole) std::cerr<<logMsg<<std::endl;
+            } else std::cerr<<"LOG THREAD HAS RECEIVED AN UNEXPECTED EVENT ("<<eventId<<")\n"; 
         }
         delete Ev;
     }
 }
-
-//usare:
-
-//__FILE__
-//__LINE__
-//__DATE__
-//__TIME__
-//__PRETTY_FUNCTION__ (versione di "__FUNCTION__" contenente anche lo scope c++ del metodo)
+//-------------------------------------------------------------------------------------------
+}//namespace Z

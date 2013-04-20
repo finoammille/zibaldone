@@ -23,16 +23,78 @@
 #include "Log.h"
 #include <algorithm>
 
-const std::string DataEvent::DataEventName[EndOfList] = {"TxDataEvent", "RxDataEvent"};
-const std::string ErrorEvent::ErrorEventName = "ErrorEvent";
-const std::string StopThreadEvent::StopThreadEventName = "StopThreadEvent";
-static EventManager EvMng;//serve per chiamare il costruttore di eventManger che inizializza le variabili (semafori, variabili condition, ...) per la corretta gestione degli eventi.
-
+namespace Z
+{
+//-------------------------------------------------------------------------------------------
+class EvMng{//ha il solo scopo di chiamare il costruttore di EventManager che inizializza i mutex, condition, ... EvMng e` privato perche` non deve essere accessibile.
+    EventManager EvMng;
+} _evMng;
 //-------------------------------------------------------------------------------------------
 //Event
-Event::Event(std::string eventName):_eventName(eventName){}
+Event* Event::clone()const{return new Event(*this);}
 
-std::string Event::eventName(){return _eventName;}
+unsigned char* Event::buf()const{return _buf;}
+
+int Event::len()const{return _len;}
+
+std::string Event::eventId()const{return _eventId;}
+
+Event::Event(const std::string& eventId, const unsigned char* buf, const int len):_buf(0), _len(0)
+{
+    if(eventId.empty()) {
+        ziblog(LOG::ERROR, "ERROR: an instance of Event cannot have empty eventId");
+        _eventId = "pincopallino";//assegno un nome per evitare crash.
+    } else _eventId = eventId;
+    if(buf && len) {
+        _len = len;
+        _buf = new unsigned char[len];
+        memcpy(_buf, buf, len);
+    }
+}
+
+Event::Event(const std::string& eventId, const std::vector<unsigned char>& data):_buf(0), _len(0)
+{
+    if(eventId.empty()) {
+        ziblog(LOG::ERROR, "ERROR: an instance of Event cannot have empty eventId");
+        _eventId = "pincopallino";//assegno un nome per evitare crash.
+    } else _eventId = eventId;
+    if(!data.empty()) {
+        _len = data.size();
+        _buf = new unsigned char[_len];
+        memcpy(_buf, &data[0], _len);
+    }
+}
+
+Event::~Event()
+{
+    _eventId.clear();
+    delete[] _buf; 
+    _buf=NULL, 
+    _len=0;
+}
+
+Event::Event(const Event &obj)
+{
+    _eventId = obj._eventId;
+    if(obj._len) {
+        _buf = new unsigned char[obj._len];//allocate new space
+        memcpy(_buf, obj._buf, obj._len);//copy values
+    } else _buf = NULL;
+    _len = obj._len;
+}
+
+Event & Event::operator = (const Event &src)
+{
+    _eventId = src._eventId;
+    if(this == &src) return *this; //self assignment check...
+    if(_buf) delete[] _buf;//deallocate
+    if(src._len) {
+        _buf = new unsigned char[src._len];//allocate new space
+        memcpy(_buf, src._buf, src._len);//copy values
+    } else _buf = NULL;
+    _len = src._len;
+    return *this;
+}
 
 void Event::emitEvent()
 {
@@ -41,14 +103,12 @@ void Event::emitEvent()
     if(EventManager::_pendingWriters) pthread_cond_wait(&EventManager::_noPendingWriters, &EventManager::_rwReq);
     EventManager::_pendingReaders++;
     pthread_mutex_unlock(&EventManager::_rwReq);
-    if(EventManager::_evtReceivers.find(_eventName) != EventManager::_evtReceivers.end()) listeners = EventManager::_evtReceivers[_eventName];
+    if(EventManager::_evtReceivers.find(_eventId) != EventManager::_evtReceivers.end()) listeners = EventManager::_evtReceivers[_eventId];
     for(size_t i = 0; i < listeners.size(); ++i) listeners[i]->pushIn(clone());
     pthread_mutex_lock(&EventManager::_rwReq);
     if(!--EventManager::_pendingReaders) pthread_cond_signal(&EventManager::_noPendingReaders);
     pthread_mutex_unlock(&EventManager::_rwReq);
 }
-
-void Event::sendEventTo(Thread* target){target->pushIn(clone());}
 //-------------------------------------------------------------------------------------------
 //THREAD
 Thread::Thread()
@@ -56,12 +116,31 @@ Thread::Thread()
     _th = 0;
     _set=false;
     pthread_mutex_init(&_lockQueue, NULL);
-    pthread_mutex_init(&_standAloneGuarantee, NULL);
+    pthread_mutex_init(&_oneAndOnly, NULL);
     pthread_cond_init(&_thereIsAnEvent, NULL);
 }
 
-Thread::~Thread(){StopReceivingAndDiscardReceived();}
+//VERY IMPORTANT! We couldn't embed the Stop() into the Thread base class destructor because this way the thread loop 
+//function would continue running untill the base class destructor had not been called. As well known the base class 
+//destructor is called after the inherited class destructor, and so the thread loop would continue his life for a little 
+//time between the end of the inherited class destructor and the base class destructor call. This means that the thread 
+//loop function could use again some member variabiles (defined in the subclass) yet destroyed by subclass destructor.
+Thread::~Thread()
+{
+    if(_set && !pthread_kill(_th, 0)) {
+        //se sono qui e il thread loop e` ancora presente c'e` una violazione delle regole
+        //di utilizzo della classe Thread (il thread loop run deve essere obbligatoriamente 
+        //terminato - chiamando Stop o uscendo - prima di distruggere l'oggetto che incapsula 
+        //il thread). Emetto un log di errore e provo a fare un recupero disperato....
+        ziblog(LOG::ERROR, "Thread loop (run method) MUST BE END before destroying a Thread object");
+        Stop();//pthread_kill usata con sig=0 dice se _th è vivo. In tal caso chiamo Stop()
+    }
+    StopReceivingAndDiscardReceived();
+}
 
+//NOTA su ThreadLoop: un metodo statico significa che ce n'e` una sola copia! Non che puo' essere chiamato solo in un thread!
+//Quindi ognuno chiama la funzione e all'uscita dalla run() chiamata da ThreadLoop ritrova il SUO arg, ovvero il puntatore al 
+//allo stesso oggetto che conteneva quella particolare run())
 void * Thread::ThreadLoop(void * arg)
 {
     ((Thread *)arg)->run();
@@ -74,31 +153,22 @@ void * Thread::ThreadLoop(void * arg)
 //la creazione di due thread (il thread va creato solo LA PRIMA VOLTA che viene chiamato il metodo Start().
 void Thread::Start()
 {
-    pthread_mutex_lock(&_standAloneGuarantee);
+    pthread_mutex_lock(&_oneAndOnly);
     if(!_set) {
         pthread_create (&_th, NULL, ThreadLoop, this);
         _set=true;
     }
-    pthread_mutex_unlock(&_standAloneGuarantee);
+    pthread_mutex_unlock(&_oneAndOnly);
 }
-
-//NOTA IMPORTANTE: Join() non deve mai essere chiamata dentro run(). Infatti Join() chiama pthread_join che si blocca in attesa che il thread termini. Tuttavia questo
-//non potrà mai terminare se è bloccato in attesa! Analogo discorso vale per Stop() dato che chiama al suo interno Join(). Effettivamente, è un'evidente contraddizione
-//chiamare Join() di se` stesso dentro run(), tuttavia potrebbe invece venire la tentazione di chiamare Stop(). Il modo giusto per terminare un thread dentro la run()
-//stessa di questo è uscire dal loop della run() dopo aver eventualmente liberato l'eventuale memoria allocata in heap.
 
 void Thread::Stop()
 {
-    StopThreadEvent stopThread;
-    stopThread.sendEventTo(this);
-    Join();//aspetto che sia effettivamente terminato prima di uscire (si tratta cmq di pochi msec, ma fondamentali perche' il chiamante abbia la certezza del risultato!)
+    Event* stopThread = new Event(StopThreadEventId);
+    pushIn(stopThread);
+    if(!Join()) ziblog(LOG::WARNING, "STOP THREAD ERROR");//aspetto che sia effettivamente terminato prima di uscire 
 }
 
-void Thread::Join()
-{
-    if(_th) pthread_join(_th, NULL);
-    else ziblog("MUST START THREAD BEFORE JOIN!");
-}
+bool Thread::Join(){return (pthread_join(_th, NULL) == 0);}
 
 void Thread::StopReceivingAndDiscardReceived()
 {
@@ -115,18 +185,18 @@ void Thread::StopReceivingAndDiscardReceived()
     pthread_mutex_unlock(&_lockQueue);
 }
 
-void Thread::register2Event(std::string eventName){EventManager::mapEvent2Receiver(eventName, this);}
+void Thread::register2Event(const std::string& eventId){EventManager::mapEvent2Receiver(eventId, this);}
 
 void Thread::pushIn(Event* ev)
 {
     pthread_mutex_lock(&_lockQueue);
-    std::map < std::string, std::deque < Event* > >::iterator it = _eventQueue.find(ev->eventName());
+    std::map < std::string, std::deque < Event* > >::iterator it = _eventQueue.find(ev->eventId());
     if(it == _eventQueue.end()) {
         std::deque < Event* > evts;
-        it = _eventQueue.insert(it, std::pair < std::string, std::deque < Event* > > (ev->eventName(),  evts));
+        it = _eventQueue.insert(it, std::pair < std::string, std::deque < Event* > > (ev->eventId(),  evts));
     }
     it->second.push_front(ev);
-    _chronologicalEventNameSequence.push_front(ev->eventName());
+    _chronologicalEventIdSequence.push_front(ev->eventId());
     pthread_cond_signal(&_thereIsAnEvent);
     pthread_mutex_unlock(&_lockQueue);
 }
@@ -155,45 +225,45 @@ Event* Thread::pullOut(int maxWaitMsec)
             }
         }
     }
-    std::deque < Event* > *evQ = &(_eventQueue.find(_chronologicalEventNameSequence.back())->second);/* non serve verificare che it !=
-                                                                                                      * _eventQueue.end() perche' c'e'
-                                                                                                      * sicuramente almeno una entry
-                                                                                                      * corrispondente all'evento in coda.
-                                                                                                      * Infatti se sono qui, vuol dire che
-                                                                                                      * e` arrivato un evento (altrimenti
-                                                                                                      * sarei uscito ritornando NULL al
-                                                                                                      * termine dell'attesa sulla condition
-                                                                                                      * variabile "_thereIsAnEvent"
-                                                                                                      */
-    _chronologicalEventNameSequence.pop_back();//aggiorno _chronologicalEventNameSequence
+    std::deque < Event* > *evQ = &(_eventQueue.find(_chronologicalEventIdSequence.back())->second);/* non serve verificare che it !=
+                                                                                                    * _eventQueue.end() perche' c'e'
+                                                                                                    * sicuramente almeno una entry
+                                                                                                    * corrispondente all'evento in coda.
+                                                                                                    * Infatti se sono qui, vuol dire che
+                                                                                                    * e` arrivato un evento (altrimenti
+                                                                                                    * sarei uscito ritornando NULL al
+                                                                                                    * termine dell'attesa sulla condition
+                                                                                                    * variabile "_thereIsAnEvent"
+                                                                                                    */
+    _chronologicalEventIdSequence.pop_back();//aggiorno _chronologicalEventIdSequence
     Event* ret =  evQ->back();/* nota: non serve controllare la condizione evQ->empty(), infatti un evento c'e` sicuramente, se no sarei
                                * uscito per timeout oppure sarei ancoda sulla variabile condizione "_thereIsAnEvent"
                                */
     evQ->pop_back();//rimuovo dalla coda l'evento
-    if(evQ->empty()) _eventQueue.erase(ret->eventName());/* se non ci sono piu' eventi di questo tipo, rimuovo la relativa lista dalla
+    if(evQ->empty()) _eventQueue.erase(ret->eventId());/* se non ci sono piu' eventi di questo tipo, rimuovo la relativa lista dalla
                                                           * mappa della coda
                                                           */
     pthread_mutex_unlock(&_lockQueue);//rilascio l'esclusivita' di accesso sulla coda
     return ret;
 }
 
-Event* Thread::pullOut(std::string eventName, int maxWaitMsec)
+Event* Thread::pullOut(const std::string& eventId, int maxWaitMsec)
 {
-    std::deque <std::string> eventNames;
-    eventNames.push_front(eventName);
-    return pullOut(eventNames, maxWaitMsec);
+    std::deque <std::string> eventIds;
+    eventIds.push_front(eventId);
+    return pullOut(eventIds, maxWaitMsec);
 }
 
-Event* Thread::pullOut(std::deque <std::string> eventNames, int maxWaitMsec)/* se decido di estrarre un evento di un certo tipo, devo anche
-                                                                             * fornire un timeout, per evitare situazioni ambigue (se l'evento
-                                                                             * non c'e', resto in attesa indefinita sinche' non arriva quello
-                                                                             * specifico evento? Di fatto bloccando tutti? E se vieme richiesto
-                                                                             * per errore un evento che non puo' arrivare resto li per sempre?
-                                                                             */
+Event* Thread::pullOut(std::deque <std::string> eventIds, int maxWaitMsec)/* se decido di estrarre un evento di un certo tipo, devo anche
+                                                                           * fornire un timeout, per evitare situazioni ambigue (se l'evento
+                                                                           * non c'e', resto in attesa indefinita sinche' non arriva quello
+                                                                           * specifico evento? Di fatto bloccando tutti? E se vieme richiesto
+                                                                           * per errore un evento che non puo' arrivare resto li per sempre?
+                                                                           */
 {
-    eventNames.push_front(StopThreadEvent::StopThreadEventName);//come spiegato sopra, DEVO sempre e comunque gestire StopThreadEventName
+    eventIds.push_front(StopThreadEventId);//come spiegato sopra, DEVO sempre e comunque gestire StopThreadEvent
     if(maxWaitMsec == WAIT4EVER) {
-        ziblog("invalid wait forever for a specific bundle of events... set wait to default value of 1 sec to prevent starvation...");
+        ziblog(LOG::WARNING, "invalid wait forever for a specific bundle of events... set wait to default value of 1 sec to prevent starvation...");
         maxWaitMsec = 1000;
     }
     std::map < std::string, std::deque < Event* > >::iterator it;
@@ -207,16 +277,16 @@ Event* Thread::pullOut(std::deque <std::string> eventNames, int maxWaitMsec)/* s
     ts.tv_nsec = tp.tv_usec*1000 + ms*1000000;
     pthread_mutex_lock(&_lockQueue);
     while (!timeout){
-        for(size_t i=0; i<eventNames.size(); i++) {
-            if((it = _eventQueue.find(eventNames[i])) != _eventQueue.end()) {/* ho trovato in coda un evento del tipo richiesto... non serve
+        for(size_t i=0; i<eventIds.size(); i++) {
+            if((it = _eventQueue.find(eventIds[i])) != _eventQueue.end()) {/* ho trovato in coda un evento del tipo richiesto... non serve
                                                                               * nemmeno far partire il timeout!
                                                                               */
                 Event* ret = (it->second).back();
                 (it->second).pop_back();
-                if((it->second).empty()) _eventQueue.erase(ret->eventName());
-                for(size_t j = 0; j<_chronologicalEventNameSequence.size(); j++) {
-                    if(_chronologicalEventNameSequence[j]==eventNames[i]) {
-                        _chronologicalEventNameSequence.erase(_chronologicalEventNameSequence.begin()+j);
+                if((it->second).empty()) _eventQueue.erase(ret->eventId());
+                for(size_t j = 0; j<_chronologicalEventIdSequence.size(); j++) {
+                    if(_chronologicalEventIdSequence[j]==eventIds[i]) {
+                        _chronologicalEventIdSequence.erase(_chronologicalEventIdSequence.begin()+j);
                         break;
                     }
                 }
@@ -244,7 +314,6 @@ Event* Thread::pullOut(std::deque <std::string> eventNames, int maxWaitMsec)/* s
                  * materiale per eseguire le istruzioni tra la pthread_cond_timedwait e la gettimeofday: e' il "bello" della programmazione real-time!)
                  */
 }
-
 //-------------------------------------------------------------------------------------------
 //EVENT MANAGER
 pthread_mutex_t EventManager::_rwReq;
@@ -265,10 +334,10 @@ EventManager::EventManager()
     pthread_mutex_init(&_lockEvtReceivers, NULL);
 }
 
-void EventManager::mapEvent2Receiver(std::string eventName, Thread *T)
+void EventManager::mapEvent2Receiver(const std::string& eventId, Thread *T)
 {
-    if(!eventName.length()) {
-        ziblog("INVALID EVENT NAME!");
+    if(!eventId.length()) {
+        ziblog(LOG::WARNING, "INVALID EVENT NAME!");
         return;
     }
     pthread_mutex_lock(&_rwReq);
@@ -276,15 +345,14 @@ void EventManager::mapEvent2Receiver(std::string eventName, Thread *T)
     _pendingWriters++;
     pthread_mutex_unlock(&_rwReq);
     pthread_mutex_lock(&_lockEvtReceivers);
-    if(_evtReceivers.find(eventName) == _evtReceivers.end()){//se il tipo di evento non era ancora stato registrato
+    if(_evtReceivers.find(eventId) == _evtReceivers.end()){//se il tipo di evento non era ancora stato registrato
         std::deque < Thread *> listeners;
-        _evtReceivers.insert(std::pair <std::string, std::deque < Thread *> >(eventName,listeners));
+        _evtReceivers.insert(std::pair <std::string, std::deque < Thread *> >(eventId,listeners));
     }
-    std::deque < Thread *>* evtReceiverList = &_evtReceivers[eventName];/* lista dei tread registrati per ricevere l'evento "eventName"
+    std::deque < Thread *>* evtReceiverList = &_evtReceivers[eventId];/* lista dei tread registrati per ricevere l'evento "eventId"
                                                                          * (nel caso non ci fosse stato nessun thread registrato, ora
                                                                          * c'e una lista vuota)
-                                                                         */
-    
+                                                                         */ 
     std::deque < Thread *>::iterator itEvtReceiverList;
     for(itEvtReceiverList = evtReceiverList->begin(); itEvtReceiverList != evtReceiverList->end(); itEvtReceiverList++) {
         if(*itEvtReceiverList == T) {//qualcuno sta facendo per errore una doppia registrazione su uno stesso evento
@@ -295,7 +363,7 @@ void EventManager::mapEvent2Receiver(std::string eventName, Thread *T)
             return;
         }
     }//se sono qui, il ricevitore non e' ancora registrato. Lo registro e rilascio il semaforo.
-    _evtReceivers[eventName].push_front(T);//registro un nuovo gestore per questo tipo di evento
+    _evtReceivers[eventId].push_front(T);//registro un nuovo gestore per questo tipo di evento
     pthread_mutex_lock(&_rwReq);
     if(!--_pendingWriters) pthread_cond_signal(&_noPendingWriters);
     pthread_mutex_unlock(&_rwReq);
@@ -325,3 +393,5 @@ void EventManager::unmapReceiver(Thread *T)
 }
 
 EventManager::~EventManager(){_evtReceivers.clear();}
+//-------------------------------------------------------------------------------------------
+}//namespace Z

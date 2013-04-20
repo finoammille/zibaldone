@@ -36,9 +36,24 @@
 #include "Thread.h"
 #include "Log.h"
 
-#define MAX_IPC_NET_CONNECTION  	1
-#define MAX_IPC_LOCAL_CONNECTION  	50
+/*
+Utilizzo:
 
+1) istanziare un oggetto Server specificando la porta "P" di ascolto
+2) istanziare un oggetto Client specificando l'IP e la porta "P" 
+   su cui e` in ascolto il server
+3) per connettere client con server, chiamare Accept() sul server, 
+   e successivamente chiamare Connect() sul client. Entrambi i metodi restituiscono
+   (rispettivamente su server e client) un puntatore ad un oggetto ConnHandler
+4) per ricevere dati da una connessione occorre registrarsi sull'evento il cui id viene
+   restituito dal metodo getRxDataEventId() di ConnHandler
+5) per trasmettere dati occorre emettere un Evento con eventId uguale a quello
+   restituito dal metodo getTxDataEventId() di ConnnHandler.
+*/
+
+namespace Z
+{
+//-------------------------------------------------------------------------------------------
 class Socket {
 protected:
     enum IpcType {LocalIpc, NetworkIpc} _ipcType;
@@ -54,29 +69,20 @@ class ConnHandler : public Thread {
     bool exit;
     void run();
     ConnHandler(int sockId);//ConnHandler non deve essere istanziabile, ma solo ottenibile effettuando una connessione.
+    std::string txDataEventId;//id dell'evento di richiesta trasmissione dati sul socket (evento ricevuto e gestito da ConnHandler)
+    std::string rxDataEventId;//id dell'evento di notifica ricezione dati sul socket (evento emesso da ConnHandler)
 public:
     ~ConnHandler(){close(_sockId);}
-    std::string getSap(){return _sap;}
-    //eventi emessi da ConnHandler
-    struct RxDataEvent : public DataEvent {
-        RxDataEvent(std::string sap, const unsigned char* buf, int len):DataEvent(DataEvent::Rx, sap, buf, len){}
-        static std::string rxDataEventName(std::string sap){return (DataEvent::DataEventName[DataEvent::Rx] + sap);}
-    };
-    //eventi ricevuti da ConnHandler
-    struct TxDataEvent : public DataEvent {
-        TxDataEvent(std::string sap, const unsigned char* buf, int len):DataEvent(DataEvent::Tx, sap, buf, len){}
-        static std::string txDataEventName(std::string sap){return (DataEvent::DataEventName[DataEvent::Tx] + sap);}
-    };
+    std::string getTxDataEventId()const{return txDataEventId;}
+    std::string getRxDataEventId()const{return rxDataEventId;}
 };
 
 class Server : protected Socket {
-    int _maxConnections;
-    int _activeConnections;
     void bindAndListen(sockaddr *addr, int addrlen);//funzione di utilizzo interno.
 public:
-    Server(int port, const int maxConnections = MAX_IPC_NET_CONNECTION);
-    Server(std::string IpcSocketName , const int maxConnections = MAX_IPC_LOCAL_CONNECTION);
-    ~Server(){if(_activeConnections < _maxConnections) close(_sockId);}
+    Server(const int port);
+    Server(const std::string& IpcSocketName);
+    ~Server(){close(_sockId);}
     ConnHandler* Accept();
 };
 
@@ -84,8 +90,8 @@ class Client : protected Socket {
     sockaddr* _addr;
     int _addrlen;
 public:
-    Client(std::string remoteAddr, int port);
-    Client(std::string IpcSocketName);
+    Client(const std::string& remoteAddr, int port);
+    Client(const std::string& IpcSocketName);
     ~Client();
     ConnHandler* Connect();
 private:
@@ -101,5 +107,6 @@ private:
     Client(const Client &);//non ha senso ritornare o passare come parametro un Socket Client per valore
     Client & operator = (const Client &);//non ha senso assegnare un Socket Client per valore
 };
-
+//-------------------------------------------------------------------------------------------
+}//namespace Z
 #endif	/* _SOCKET_H */

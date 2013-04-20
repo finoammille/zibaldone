@@ -31,6 +31,9 @@
 
 #include "Log.h"
 
+namespace Z 
+{
+//-------------------------------------------------------------------------------------------
 class SerialPort
 {
 private:
@@ -42,7 +45,7 @@ public:
 
 private:
     struct termios _serialPortSettings;
-    bool Open(std::string);
+    bool Open(const std::string&);
     void SetBaudRate(int);//NOTA: tutti i metodi che modificano i parametri della seriale (SetBaudRate, SetFlowControl, ...) ovviamente
                           //possono essere usati solamente dopo la open. Non metto controlli in tal senso perche' tali metodi sono privati
                           //all'interno di SerialPort, e li uso solo io (che so come usarli!)
@@ -56,7 +59,7 @@ private:
     void ToggleRts();
 
 public:
-    SerialPort(std::string portName,
+    SerialPort(const std::string& portName,
         int baudRate,
         SerialPort::Parity parity,
         int dataBits,
@@ -76,5 +79,7 @@ public:
     SerialPortException(std::string errorMessage):_errorMessage(errorMessage){}
     std::string ErrorMessage() {return _errorMessage;}
 };
+//-------------------------------------------------------------------------------------------
+}//namespace Z
 
 #endif	/* _LINUXSERIALPORT_H */

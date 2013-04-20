@@ -21,7 +21,10 @@
 
 #include "SerialPortHandler.h"
 
-SerialPortHandler::SerialPortHandler(std::string portName,
+namespace Z 
+{
+//-------------------------------------------------------------------------------------------
+SerialPortHandler::SerialPortHandler(const std::string& portName,
                                      int baudRate,
                                      SerialPort::Parity parity,
                                      int dataBits,
@@ -30,16 +33,16 @@ SerialPortHandler::SerialPortHandler(std::string portName,
                                      bool toggleDtr,
                                      bool toggleRts):
 _sp(portName, baudRate, parity, dataBits, stopBits, flwctrl, toggleDtr, toggleRts),
-_portName(portName)
+_portName(portName), rxDataEventId("rxDataEvent"+portName), txDataEventId("txDataEvent"+portName),
+serialPortErrorEventId("serialPortErrorEvent"+portName)
 {
     exit = false;
     /*
      * autoregistrazione sull'evento di richiesta di scrittura sulla seriale.
      * Chi vuol inviare dati sulla porta seriale "_portName" deve
-     * semplicemente inviare un evento  "DataEvent" di tipo "Tx" con
-     * sap = _portName
+     * semplicemente inviare un evento  (Event) con eventId=txDataEventId
      */
-    register2Event(TxDataEvent::txDataEventName(_portName));
+    register2Event(txDataEventId);
 }
 
 std::string SerialPortHandler::portName(){return _portName;}
@@ -53,25 +56,29 @@ void SerialPortHandler::run()
             if(!rxData.empty()){
                 unsigned char* buffer = new unsigned char[rxData.size()];
                 for(size_t i=0; i<rxData.size(); i++)buffer[i]=rxData[i];
-                RxDataEvent rx(_portName, buffer, rxData.size());
+                Event rx(rxDataEventId, buffer, rxData.size());
                 rx.emitEvent();
                 delete buffer;
             }
             Event* Ev = pullOut(10);//max 1/100 secondo di attesa
             if(Ev){
-                std::string eventName = Ev->eventName();
-                ziblog("received event %s", eventName.c_str());
-                if(eventName == StopThreadEvent::StopThreadEventName) exit = true; 
-                else if(eventName==(TxDataEvent::txDataEventName(_portName))){
-                    TxDataEvent* w = (TxDataEvent *)Ev;
-                    _sp.Write(w->buf(), w->len());
-                    delete w;
+                std::string eventId = Ev->eventId();
+                ziblog(LOG::INFO, "received event %s", eventId.c_str());
+                if(eventId == StopThreadEventId) exit = true; 
+                else if(eventId == txDataEventId){
+                    _sp.Write(Ev->buf(), Ev->len());
+                    delete Ev;
                 } 
             }
         } catch(SerialPortException spEx){
-            SerialPortErrorEvent serialPortErrorEvent(_portName, spEx.ErrorMessage());
+            unsigned int ErrorMessageLen = spEx.ErrorMessage().size();
+            unsigned char* buffer = new unsigned char[ErrorMessageLen];
+            for(size_t i=0; i<ErrorMessageLen; i++) buffer[i]=(unsigned char)spEx.ErrorMessage()[i];
+            Event serialPortErrorEvent(serialPortErrorEventId, buffer, ErrorMessageLen);
             serialPortErrorEvent.emitEvent();//nota: l'evento viene emesso in modo che l'utilizzatore della seriale sappia che questa non funziona. Poi devo comunque uscire (exit = true) per evitare di continuare a emettere lo stesso errore ripetutamente (la seriale non funziona! E' scollegata o e' rotta!)
             exit = true;
         }
     }
 }
+//-------------------------------------------------------------------------------------------
+}//namespace Z

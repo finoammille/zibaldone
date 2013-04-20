@@ -21,40 +21,37 @@
 
 #include "Timer.h"
 
-const std::string TimeoutEvent::TimeoutEventName = "TimeoutEvent";
-
-Timer::Timer(std::string timerName, Thread* target, int duration):_target(target),_duration(duration),_running(false),timerName(timerName)
+namespace Z
+{
+//-------------------------------------------------------------------------------------------
+Timer::Timer(const std::string& timerId, int duration):timerId(timerId),_duration(duration),_running(false)
 {
     pthread_mutex_init(&_lock, NULL);
 }
 
-Timer::~Timer()
-{
-    Stop();
-}
+Timer::~Timer(){Stop();}
 
 void Timer::onTimeout(sigval_t val)
 {
     pthread_mutex_lock(&(((Timer*)val.sival_ptr)->_lock));
     ((Timer*)val.sival_ptr)->_running = false;
     pthread_mutex_unlock(&(((Timer*)val.sival_ptr)->_lock));
-    TimeoutEvent* te = new TimeoutEvent(((Timer*)val.sival_ptr)->_target, ((Timer*)val.sival_ptr)->timerName);
-    te->notify();
-    delete te;
+    Event timeout(((Timer*)val.sival_ptr)->timerId);
+    timeout.emitEvent();
 }
 
 void Timer::Start(int mSec)
 {
     if(mSec) _duration = mSec;
     if(!_duration) {
-        ziblog("timer %s has non valid duration value", timerName.c_str());//se sono qui, nè il costruttore ne il chiamante di Start hanno assegnato un valore utile a _duration
+        ziblog(LOG::WARNING, "timer %s has non valid duration value", timerId.c_str());//se sono qui, nè il costruttore ne il chiamante di Start hanno assegnato un valore utile a _duration
         return;
     }
    
     pthread_mutex_lock(&_lock);
     if(_running) {
         timer_delete(_tId);
-        ziblog("timer %s previously created set to new value", timerName.c_str());
+        ziblog(LOG::WARNING, "timer %s previously created set to new value", timerId.c_str());
     }
     pthread_mutex_unlock(&_lock);
     sigevent e;
@@ -81,3 +78,5 @@ void Timer::Stop()
     _running = false;
     pthread_mutex_unlock(&_lock);
 }
+//-------------------------------------------------------------------------------------------
+}//namespace Z

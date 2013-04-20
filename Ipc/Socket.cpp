@@ -21,17 +21,20 @@
 
 #include "Socket.h"
 
+namespace Z
+{
+//-------------------------------------------------------------------------------------------
 Socket::Socket(IpcType type):_ipcType(type)
 {
     int socketType = (_ipcType == LocalIpc ? PF_LOCAL : AF_INET);
     if((_sockId = socket(socketType, SOCK_STREAM, 0))<0) {
-        ziblog("Socket Error (%d)!", _sockId);
+        ziblog(LOG::ERROR, "Socket Error (%d)!", _sockId);
         return;
     }
     if(_ipcType == NetworkIpc) {
         int optionValue = 1;
         if((setsockopt(_sockId, SOL_SOCKET, SO_REUSEADDR, &optionValue, sizeof(optionValue))<0) ||
-           (setsockopt(_sockId, SOL_SOCKET, SO_KEEPALIVE, &optionValue, sizeof(optionValue))<0)) ziblog("Socket Error (%d)!", errno);
+           (setsockopt(_sockId, SOL_SOCKET, SO_KEEPALIVE, &optionValue, sizeof(optionValue))<0)) ziblog(LOG::ERROR, "Socket Error (%d)!", errno);
     }
 }
 
@@ -41,24 +44,27 @@ ConnHandler::ConnHandler(int sockId):_sockId(sockId)
     std::stringstream sap;
     sap<<_sockId;
     _sap = sap.str();
-    int nonBlockingMode;
-    if((nonBlockingMode = fcntl(_sockId, F_GETFL) < 0)) {
-        ziblog("Setting Non Blocking mode on Socket (%d) has failed!", _sockId);
-        return;
-    }
-    nonBlockingMode = (nonBlockingMode | O_NONBLOCK);
-    fcntl(_sockId, F_SETFL, nonBlockingMode);
-    register2Event(TxDataEvent::txDataEventName(_sap));//autoregistrazione sugli eventi di richiesta di trasmissione inviatigli dagli utilizzatori
+    txDataEventId="txDataEvent"+_sap;
+    rxDataEventId="rxDataEvent"+_sap;
+    register2Event(txDataEventId);//autoregistrazione sugli eventi di richiesta di trasmissione inviatigli dagli utilizzatori
 }
 
 void ConnHandler::run()
 {
     const int maxSize = 1024;
     unsigned char rxbyte[maxSize];
+    int nonBlockingMode;//occorre ora cambiare la modalita' di accesso al file descriptor del socket e renderla non bloccante,
+                        //altrimenti il thread resta inchiodato sulla read senza poter fare altro sinche` non arriva qualcosa...
+    if((nonBlockingMode = fcntl(_sockId, F_GETFL) < 0)) {
+        ziblog(LOG::ERROR, "Setting Non Blocking mode on Socket (%d) has failed!", _sockId);
+        return;
+    }
+    nonBlockingMode = (nonBlockingMode | O_NONBLOCK);
+    fcntl(_sockId, F_SETFL, nonBlockingMode);
     while(!exit){
         int len = 0;
         if((len = read(_sockId, rxbyte, maxSize)) > 0) {
-            RxDataEvent rx(_sap, rxbyte, len);
+            Event rx(rxDataEventId, rxbyte, len);
             rx.emitEvent();
         } else if(len == 0) break; /* il peer ha chiuso il socket. Esco dal loop del thread. La close
                                     * del socket non devo farla qui perche' la fa gia' il distruttore
@@ -66,21 +72,19 @@ void ConnHandler::run()
                                     */
         Event* Ev = pullOut(10);//max 1/100 di secondo di attesa
         if(Ev){
-            std::string eventName = Ev->eventName();
-            ziblog("received event %s", eventName.c_str());
-            if(eventName == StopThreadEvent::StopThreadEventName) exit = true;
-            if(eventName == TxDataEvent::txDataEventName(_sap)) {
-                TxDataEvent* w = (TxDataEvent *)Ev;
-                write(_sockId, w->buf(), w->len());
-                delete w;
+            std::string eventId = Ev->eventId();
+            ziblog(LOG::INFO, "received event %s", eventId.c_str());
+            if(eventId == StopThreadEventId) exit = true;
+            if(eventId == txDataEventId) {
+                write(_sockId, Ev->buf(), Ev->len());
+                delete Ev;
             }
         }
     }
 }
 
-Server::Server(int port, const int maxConnections):Socket(Socket::NetworkIpc), _maxConnections(maxConnections)
+Server::Server(int port):Socket(Socket::NetworkIpc)
 {
-    _activeConnections = 0;
     sockaddr_in sockAddr;
     sockAddr.sin_family = AF_INET;
     sockAddr.sin_addr.s_addr = INADDR_ANY;
@@ -88,9 +92,8 @@ Server::Server(int port, const int maxConnections):Socket(Socket::NetworkIpc), _
     bindAndListen((sockaddr *)&sockAddr, sizeof(sockAddr));
 }
 
-Server::Server(std::string IpcSocketName, const int maxConnections):Socket(Socket::LocalIpc), _maxConnections(maxConnections)
+Server::Server(const std::string& IpcSocketName):Socket(Socket::LocalIpc)
 {
-    _activeConnections = 0;
     sockaddr_un sockAddr;
     sockAddr.sun_family = PF_UNIX;
     strcpy (sockAddr.sun_path, IpcSocketName.c_str());
@@ -100,39 +103,33 @@ Server::Server(std::string IpcSocketName, const int maxConnections):Socket(Socke
 
 void Server::bindAndListen(sockaddr *addr, int addrlen)
 {
-    if(bind(_sockId,addr, addrlen)<0){
-        ziblog("Socket Bind Error (%d)!", _sockId);
+    if(bind(_sockId, addr, addrlen)<0){
+        ziblog(LOG::ERROR, "Socket Bind Error (%d)!", _sockId);
         return;
     }
-    if(listen (_sockId, _maxConnections)<0) ziblog("Socket Listening Error");
+    if(listen(_sockId, 1) < 0) ziblog(LOG::ERROR, "Socket Listening Error");
 }
 
 ConnHandler* Server::Accept()
 {
-    for(;;) {
-        int sockConnHandlerId;
-        if((sockConnHandlerId = accept(_sockId, NULL, NULL)) < 0) {
-            ziblog("Connection Error (%d)", errno);
-            return NULL;
-        }
-        if(++_activeConnections = _maxConnections) {
-            close(_sockId);//non accetto altre richieste di connessione.
-        }
-        return new ConnHandler(sockConnHandlerId);//istanzio il thread che gestisce la connessione
-    }
+    int sockConnHandlerId = accept(_sockId, NULL, NULL);//rimane bloccato qui sinche` non arriva una richiesta di connessione.
+    if(sockConnHandlerId < 0) {
+        ziblog(LOG::ERROR, "Connection Error (%d)", errno);
+        return NULL;
+    } else return new ConnHandler(sockConnHandlerId);//istanzio il thread che gestisce la connessione 
 }
 
-Client::Client(std::string remoteAddr, int port):Socket(Socket::NetworkIpc)
+Client::Client(const std::string& remoteAddr, int port):Socket(Socket::NetworkIpc)
 {
     sockaddr_in* addr = new sockaddr_in();
     addr->sin_family = AF_INET;
     addr->sin_port = htons(port);
     _addrlen = sizeof(*addr);
-    if(!inet_pton(AF_INET, remoteAddr.c_str(), &addr->sin_addr)) ziblog("inet_pton (%s) has failed!", remoteAddr.c_str());
+    if(!inet_pton(AF_INET, remoteAddr.c_str(), &addr->sin_addr)) ziblog(LOG::WARNING, "inet_pton (%s) has failed!", remoteAddr.c_str());
     _addr = (sockaddr* )addr;
 }
 
-Client::Client(std::string IpcSocketName):Socket(Socket::LocalIpc)
+Client::Client(const std::string& IpcSocketName):Socket(Socket::LocalIpc)
 {
     sockaddr_un* addr = new sockaddr_un();
     addr->sun_family = PF_UNIX;
@@ -150,8 +147,10 @@ Client::~Client()
 ConnHandler* Client::Connect()
 {
     if(connect(_sockId, _addr, _addrlen) < 0) {
-        ziblog("connection to %s has failed (%d)", inet_ntoa(((struct sockaddr_in *)_addr)->sin_addr), errno);
+        ziblog(LOG::ERROR, "connection to %s has failed (%d)", inet_ntoa(((struct sockaddr_in *)_addr)->sin_addr), errno);
         return NULL;
     }
     return new ConnHandler(_sockId);
 }
+//-------------------------------------------------------------------------------------------
+}//namespace Z

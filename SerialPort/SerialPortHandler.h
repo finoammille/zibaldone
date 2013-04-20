@@ -26,11 +26,14 @@
 
 /*
  * implementa un thread in ascolto sulla porta seriale che emette l'evento
- * "SerialPortHandler::RxDataEvent" ogni volta che riceve un byte sulla porta
- * "serial-port-name". Il nome dell'evento (eventName) e' ottenibile invocando
- * il metodo (statico) SerialPortHandler::RxDataEvent::rxDataEventName.
+ * "rxDataEvent" ogni volta che riceve un byte sulla porta. Il nome dell'evento 
+ * (eventId) e' ottenibile invocando il metodo getRxDataEventName.
  * Chi desidera ricevere l'evento deve registrarsi.
  */
+
+namespace Z
+{
+//-------------------------------------------------------------------------------------------
 class SerialPortHandler : public Thread {
 protected:
     /*
@@ -40,10 +43,13 @@ protected:
      */
     SerialPort _sp;
     std::string _portName;//serve per taggare univocamente gli eventi relativi ad una specifica porta
+    const std::string rxDataEventId;
+    const std::string txDataEventId;
+    const std::string serialPortErrorEventId;
     bool exit;
     void run();//ciclo del thread in ascolto sulla porta
 public:    
-    SerialPortHandler(std::string portName,
+    SerialPortHandler(const std::string& portName,
         int baudRate,
         SerialPort::Parity parity,
         int dataBits,
@@ -54,21 +60,13 @@ public:
                                 //default a false. In alcuni rari casi (per esempio nello stacker controllato tramite
                                 //chip FT232RL della FTDI che simula una porta seriale via USB) occorre invertirli entrambi.
     std::string portName();
-    //eventi emessi da SerialPortHandler
-    struct RxDataEvent : public DataEvent {
-        RxDataEvent(std::string portName, const unsigned char* buf, int len):DataEvent(DataEvent::Rx, portName, buf, len){}
-        static std::string rxDataEventName(std::string portName){return (DataEvent::DataEventName[DataEvent::Rx] + portName);}
-    };
-    //evento emesso in caso di errore
-    struct SerialPortErrorEvent : public ErrorEvent {
-        SerialPortErrorEvent(std::string portName, std::string errorMessage):ErrorEvent(portName, errorMessage){}
-        static std::string SerialPortErrorEventName(std::string portName){return (ErrorEvent::ErrorEventName + portName);}
-    };
-    //eventi ricevuti da SerialPortHandler
-    struct TxDataEvent : public DataEvent {
-        TxDataEvent(std::string portName, const unsigned char* buf, int len):DataEvent(DataEvent::Tx, portName, buf, len){}
-        static std::string txDataEventName(std::string portName){return (DataEvent::DataEventName[DataEvent::Tx] + portName);}
-    };
+    std::string getRxDataEventId()const{return rxDataEventId;}//eventId ricezione emesso da SerialPortHandler
+    static std::string getRxDataEventId(const std::string& port) {return "rxDataEvent"+port;}//eventId ricezione emesso da SerialPortHandler
+    std::string getTxDataEventId()const{return txDataEventId;}//eventId x richiesta di trasmissione, ricevuto da SerialPortHandler
+    static std::string getTxDataEventId(const std::string& port) {return "txDataEvent"+port;}//eventId x richiesta di trasmissione, ricevuto da SerialPortHandler
+    std::string getSerialPortErrorEventId()const{return serialPortErrorEventId;}//eventId x serial error, ricevuto da SerialPortHandler
+    static std::string getSerialPortErrorEventId(const std::string& port) {return "serialPortErrorEvent"+port;}//eventId x serial error, ricevuto da SerialPortHandler
 };
-
+//-------------------------------------------------------------------------------------------
+}//namespace Z
 #endif	/* _SERIALPORTHANDLER_H */

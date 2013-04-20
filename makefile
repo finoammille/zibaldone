@@ -39,7 +39,7 @@ endif
 
 CFLAGS = -Wall -Werror $(DEBUG) $(ARCH_CFLAGS)
 
-IFLAGS = -I./Ipc -I./Log -I./SerialPort/LinuxSerialPort -I./SerialPort -I./Thread -I./Timer
+IFLAGS = -I./Ipc -I./Log -I./SerialPort/LinuxSerialPort -I./SerialPort -I./Thread -I./Timer -I./Tools
 LFLAGS = -lpthread
 
 # dependencies
@@ -48,7 +48,8 @@ DEPS = ./Ipc/Socket.h \
 	   ./SerialPort/LinuxSerialPort/LinuxSerialPort.h \
 	   ./SerialPort/SerialPortHandler.h \
 	   ./Thread/Thread.h \
-	   ./Timer/Timer.h
+	   ./Timer/Timer.h \
+	   ./Tools/Tools.h
 
 # objects
 OBJ_NAMES = ./Ipc/Socket \
@@ -56,7 +57,8 @@ OBJ_NAMES = ./Ipc/Socket \
 			./SerialPort/LinuxSerialPort/LinuxSerialPort \
 			./SerialPort/SerialPortHandler \
 			./Thread/Thread \
-			./Timer/Timer
+			./Timer/Timer \
+			./Tools/Tools
 OBJ_O = $(foreach OBJ_NAME, $(OBJ_NAMES), $(OBJ_NAME).o)
 OBJ_OS = $(foreach OBJ_NAME, $(OBJ_NAMES), $(OBJ_NAME).os)
 
@@ -79,7 +81,7 @@ zibaldone: $(OBJ_O) $(OBJ_OS)
 	mv  lib$@.so ./build
 
 clean:
-	rm -f $(OBJ) $(OBJ_OS) ./build/libzibaldone.so ./build/libzibaldone.a
+	rm -f $(OBJ_O) $(OBJ_OS) ./build/libzibaldone.so ./build/libzibaldone.a
 
 #test:
 #	@echo machine=$(MACHINE) additional flags=$(ARCH_CFLAGS)

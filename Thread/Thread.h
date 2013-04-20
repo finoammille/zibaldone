@@ -23,35 +23,63 @@
 #define	_THREAD_H
 //-------------------------------------------------------------------------------------------
 #include "pthread.h"
+#include <signal.h>
 #include <errno.h>
+#include <vector>
 #include <deque>
 #include <iostream>
 #include <map>
 #include <string>
-#include <string.h>
 #include <stdlib.h>
 #include <cstring>
 #include <sys/time.h>
 //-------------------------------------------------------------------------------------------
-#define WAIT4EVER -1
-#define NOWAIT 0
 
-//Event
+namespace Z 
+{
+//-------------------------------------------------------------------------------------------
+const int WAIT4EVER = -1;
+const int NOWAIT = 0;
+const std::string StopThreadEventId = "StopThreadEvent";//Evento che deve essere OBBLIGATORIAMENTE gestito da tutti i thread: quando
+                                                        //un thread riceve l'evento StopThreadEvent deve uscire prima possibile.
+/*
+
+EVENT
+
+Un evento e` un buffer di byte identificato da una stringa. La semantica del buffer e` delagata all'utilizzatore, Event si fa
+carico solo di contenere i byte in una struttura compatibile con il framework della gestione degli eventi. In particolare Event 
+fa una propria copia del buffer passatogli tramite il costruttore ed e` pertanto compito del chiamante liberare, se necessario, 
+la memoria dopo aver passato i byte Event.
+
+Osservazione: l'implementazione degli eventi come buffer di byte consente sostanzialmente tutto! Infatti il contenuto potrebbe 
+essere l'elenco dei parametri da passare al costruttore di una classe identificata univocamente da EventId (caso tipico), ma 
+potrebbe contenere qualsiasi cosa, un immagine, un file..... L'emissione di un evento non e` legata alla presenza di nessun thread 
+(anche se e` ovviamente ragionevole che ci sia almeno un ricevitore!),  per emettere un evento basta chiamare il metodo ''emitEvent''. 
+Quando viene chiamato questo metodo, il gestore degli eventi (event manager) si fa carico di fare una copia indipendente dell'evento 
+emesso sulla coda di ogni thread che si era precedentemente registrato dichiarandosi interessato all'evento stesso. Questo approccio 
+ha il pregio della semplicita` ma per contro occorre ricordare che l'individuazione di un evento avviene SOLO PER NOME per cui 
+bisogna fare attenzione ai nomi degli eventi quando un thread si registra per riceverli (lo fa dicendo il nome degli eventi che vuole 
+ricevere): registrarsi su un nome sbagliato (magari a causa di una lettera minuscola/maiuscola) causa la non ricezione dell'evento!
+
+*/
 class Event {
     friend class Thread;
+    std::string _eventId;
+    unsigned char* _buf;
+    int _len;
+    Event* clone() const;
 public:
-    virtual ~Event(){};
-    Event(std::string eventName);
-    std::string eventName();
-    void emitEvent();
-protected:
-    std::string _eventName;
-    virtual Event* clone() const = 0;
-    void sendEventTo(class Thread* target);/* utilizzato dall'evento timeout che non deve essere
-                                            * emesso "in broadcast" ma inviato solo ad uno specifico
-                                            * thread destinatario.
-                                            */
+    unsigned char* buf() const;
+    int len() const;
+    std::string eventId() const;
+    Event(const std::string& eventId, const unsigned char* buf=NULL, const int len=0);
+    Event(const std::string& eventId, const std::vector<unsigned char>&);
+    ~Event();
+    Event(const Event &);
+    Event & operator = (const Event &);
+    void emitEvent();//L'emissione dell'evento comporta la notifica a tutti i thread registrati sull'evento
 };
+
 //-------------------------------------------------------------------------------------------
 //THREAD
 class Thread {
@@ -59,28 +87,28 @@ class Thread {
 private:
     pthread_t _th;
     pthread_mutex_t _lockQueue;
-    pthread_mutex_t _standAloneGuarantee;//mutex utilizzato per garantire l'unicità del thread associato alla classe.
-                                         //viene utilizzato dentro il metodo Start() per prevenire i danni causati da
-                                         //un'eventuale doppia chiamata di Start(). Infatti se ciò accadesse, verrebbero
-                                         //creati due thread indipendenti e identici (stesso ciclo run()) ma che condivi-
-                                         //derebbero gli stessi dati all'interno della classe con corse, problemi di 
-                                         //scrittori/lettori, starvation, deadlock...
+    pthread_mutex_t _oneAndOnly;//mutex utilizzato per garantire l'unicità del thread associato alla classe.
+                                //viene utilizzato dentro il metodo Start() per prevenire i danni causati da
+                                //un'eventuale doppia chiamata di Start(). Infatti se ciò accadesse, verrebbero
+                                //creati due thread indipendenti e identici (stesso ciclo run()) ma che condivi-
+                                //derebbero gli stessi dati all'interno della classe con corse, problemi di 
+                                //scrittori/lettori, starvation, deadlock...
     bool _set;
     pthread_cond_t _thereIsAnEvent;
     virtual void run()=0;
     static void *ThreadLoop(void * arg);
     std::map < std::string, std::deque < Event* > > _eventQueue;
     void pushIn(Event*);
-    std::deque <std::string > _chronologicalEventNameSequence;/* lista ordinata dei puntatori alle code da utilizzare
-                                                               * per estrarre gli eventi in ordine cronologico
-                                                               */
+    std::deque <std::string > _chronologicalEventIdSequence;/* lista ordinata dei puntatori alle code da utilizzare
+                                                             * per estrarre gli eventi in ordine cronologico
+                                                             */
 protected:
     /*
-     * Nota importante: i metodi pullOut dovrebbero essere chiamati SOLO all'interno del ciclo del thread (metodo run()).
-     * Infatti, se da un punto di vista tecnico nulla vieta che siano chiamate al di fuori utilizzandole come metodi di
-     * un'istanza di tipo Thread, facendo cosi' esse girerebbero nel thread chiamante, e pertanto anche le operazioni di
-     * lock/unlock dei mutex della coda del thread girerebbero nel thread chiamante anziche' nel thread possessore della
-     * coda. Analogo discorso vale per la StopReceivingAndDiscardReceived().
+     * Nota importante: i metodi pullOut sono protected perche` possono essere chiamati SOLO all'interno del ciclo del 
+     * thread (metodo run()). Infatti, se da un punto di vista tecnico nulla vieta che siano chiamate al di fuori 
+     * utilizzandole come metodi di un'istanza di tipo Thread, facendo cosi' esse girerebbero nel thread chiamante, e 
+     * pertanto anche le operazioni di lock/unlock dei mutex della coda del thread girerebbero nel thread chiamante 
+     * anziche' nel thread possessore della coda. Analogo discorso vale per la StopReceivingAndDiscardReceived().
      */
     Event* pullOut(int maxWaitMsec = WAIT4EVER);/* metodo che restituisce il primo evento disponibile sulla coda del thread
                                                  * aspettando al massimo "maxWaitMsec" millisecondi: se non arriva nessun
@@ -95,28 +123,28 @@ protected:
      *  il thread target non termina. Questa scelta e` necessaria per garantire che l'oggetto che incapsula il thread possa essere
      *  distrutto: ho la certezza di poter distruggere l'oggetto senza danni una volta che il metodo Stop() e` ritornato perche' ho
      *  la certezza che a quel punto il thread e` terminato. Infatti serve a garantire che i dati della classe su cui si appoggia il 
-     *  ciclo del thread esistano sinche` il thread non termina. Per questo motivo e` indispensabile che l'evenot StopThreadEvent sia 
+     *  ciclo del thread esistano sinche` il thread non termina. Per questo motivo e` indispensabile che l'evento StopThreadEvent sia 
      *  notificato sempre quando presente, e che sia gestito subito onde evitare possibili starvation e nei casi piu' gravi deadlock 
      *  (si pensi per esempio al caso di un thread "A" che chiama Stop() su un thread "B" e si blocchi in attesa che "A" termini mentre 
      *  invece "B" sta attendendo eventi di un certo tipo (e solo quelli) da "A": "A" non emettera` nessun evento e "B" non terminera` 
      *  mai => "A" resta bloccato all'infinito con "B".
      *  
      */
-    Event* pullOut(std::string eventName, int maxWaitMsec = NOWAIT);/* metodo che restituisce il primo evento disponibile sulla
-                                                                     * coda del tipo richiesto, se presente entro il tempo
-                                                                     * prestabilito. Se l'evento non viene ricevuto entro il
-                                                                     * timeout, il metodo restituisce NULL. Fa eccezione l'evento
-                                                                     * "StopThreadEvent" che se presente in coda viene notificato
-                                                                     * comunque.
-                                                                     */
-    Event* pullOut(std::deque <std::string> eventNames, int maxWaitMsec = NOWAIT);/* metodo che restituisce il primo evento
-                                                                                   * disponibile sulla coda del tipo di uno
-                                                                                   * qualsiasi appartenente alla lista eventNames
-                                                                                   * degli eventi. Se l'evento non viene ricevuto
-                                                                                   * entro il timeout, il metodo restituisce NULL.
-                                                                                   * Fa eccezione l'evento "StopThreadEvent" che, se
-                                                                                   * presente in coda, viene notificato comunque.
-                                                                                   */
+    Event* pullOut(const std::string& eventId, int maxWaitMsec = NOWAIT);/* metodo che restituisce il primo evento disponibile sulla
+                                                                          * coda del tipo richiesto, se presente entro il tempo
+                                                                          * prestabilito. Se l'evento non viene ricevuto entro il
+                                                                          * timeout, il metodo restituisce NULL. Fa eccezione l'evento
+                                                                          * "StopThreadEvent" che se presente in coda viene notificato
+                                                                          * comunque.
+                                                                          */
+    Event* pullOut(std::deque <std::string> eventIds, int maxWaitMsec = NOWAIT);/* metodo che restituisce il primo evento
+                                                                                 * disponibile sulla coda del tipo di uno
+                                                                                 * qualsiasi appartenente alla lista eventIds
+                                                                                 * degli eventi. Se l'evento non viene ricevuto
+                                                                                 * entro il timeout, il metodo restituisce NULL.
+                                                                                 * Fa eccezione l'evento "StopThreadEvent" che, se
+                                                                                 * presente in coda, viene notificato comunque.
+                                                                                 */
     void StopReceivingAndDiscardReceived();/* interrompe la ricezione di qualsiasi evento deregistrandisi da tutto 
                                             * e elimina tutti gli eventi presenti in coda al momento della chiamata.
                                             */
@@ -124,9 +152,9 @@ protected:
 public:
     virtual ~Thread();
     void Start();
-    void Stop();//N.B.: non deve mai essere chiamata dentro run()
-    void Join();//N.B.: non deve mai essere chiamata dentro run()
-    void register2Event(std::string eventName);
+    void Stop();//N.B.: non dovrebbe mai essere chiamata dentro run(). 
+    bool Join();//N.B.: non dovrebbe mai essere chiamata dentro run()
+    void register2Event(const std::string& eventId);
 private:
     //secondo la "Law of The Big Three" del c++, se si definisce uno tra: distruttore, costruttore di copia o operatore di 
     //assegnazione, probabilmente occorrera' definire anche i due restanti (e non usare quelli di default cioe`!). Tuttavia 
@@ -148,97 +176,12 @@ private:
     static int _pendingWriters;
     static pthread_mutex_t _lockEvtReceivers;
     static std::map < std::string, std::deque < Thread *> > _evtReceivers;
-    static void mapEvent2Receiver(std::string eventName, Thread *T);
+    static void mapEvent2Receiver(const std::string& eventId, Thread *T);
     static void unmapReceiver(Thread *T);
 public:
     EventManager();
     ~EventManager();
 };
-//===========================================================================================
-//Alcuni utili eventi generici ...
-//
-// NOTA: la definizione di un nuovo evento deve essere fatta come segue:
-// => deve ereditare Event
-//
-// => dovrebbe avere un membro statico pubblico const string che serve per identificare 
-//    univocamente l'evento. Per gli eventi utilizzabili in diversi contesti (come per esempio
-//    il caso, che segue, della generica ricezione/trasmissione di dati) la scelta che ho fatto
-//    e' stata di assegnare un prefisso comune al nome degli eventi (nel caso che segue "rxData/
-//    txData") seguito da un identificatore che dipende dal contesto (sap - service access point)
-//    che distingue due eventi concettualmente identici emessi da entita' differenti, ovvero permette
-//    di utilizzare la struttura di uno stesso evento da entita' diverse (per esempio gli eventi
-//    txData/dev/ttyS0 e txData/dev/ttyS1 sono entrambi eventi txData ma si riferiscono a due porte
-//    seriali diverse). In questo modo pur mantenendo la struttura generale di un evento identica
-//    si puo' fare in modo che un utilizzatore possa registrarsi direttamente su un particolare evento
-//    (per esempio sugli eventi ricevuti da una certa seriale) senza dover registrarsi su tutti gli
-//    eventi per poi andare nel dettaglio e scartare quelli che non interessano.
-//    Osservazione: quando un evento non e' "riutilizzabile" nel senso che si tratta di un evento
-//    particolare legato ad una certa implementazione/macchina a stati di una applicazione, e' opportuno
-//    assegnare un nome senza prefissi-suffissi.
-//
-// => deve avere il metodo clone che esegue una copia esatta dell'evento. Tale metodo e' praticamente
-//    sempre uguale per tutti gli eventi (Event* clone() const{return new NuovoEvento(*this);}) ma e'
-//    necessario inserirlo in ogni classe per fare in modo che il polimorfismo agisca sull'effettivo
-//    tipo derivato: se lo si mettesse solo nella classe base, la copia avverrebbe del *this della 
-//    classe base, ovvero non avrei la copia dell'oggetto derivato. E' utile notare che clone usa
-//    il costruttore di copia, ed e' pertanto demandata a questo la gestione delle eventuali allocazioni
-//    in heap (regola del BIG 3!)
-//
 //-------------------------------------------------------------------------------------------
-//EVENTO ricezione/trasmissione Dati
-class DataEvent : public Event {
-protected:
-    unsigned char* _buf;
-    int _len;
-    Event* clone() const{return new DataEvent(*this);}
-public:
-    enum DataEventId {Tx, Rx, EndOfList};
-    const static std::string DataEventName[EndOfList];
-    unsigned char* buf(){return _buf;}
-    int len(){return _len;}
-    DataEvent(DataEventId Id, std::string sap, const unsigned char* buf, int len):Event(DataEventName[Id] + sap)
-    {
-        _buf = new unsigned char[len];
-        memcpy(_buf, buf, len);
-        _len = len;
-    }
-    ~DataEvent(){delete[] _buf; _buf=NULL, _len=0;}
-    DataEvent(const DataEvent &obj):Event(obj._eventName)
-    {
-        _buf = new unsigned char[obj._len];//allocate new space
-        memcpy(_buf, obj._buf, obj._len);//copy values
-        _len = obj._len;
-    }
-    DataEvent & operator = (const DataEvent &src)
-    {
-        _eventName = src._eventName;
-        if(this == &src) return *this; //self assignment check...
-        if(_buf) delete[] _buf;//deallocate
-        _buf = new unsigned char[src._len];//allocate new space
-        memcpy(_buf, src._buf, src._len);//copy values
-        _len = src._len;
-        return *this;
-    }
-};
-
-//EVENTO notifica errore
-class ErrorEvent : public Event {
-protected:
-    Event* clone() const{return new ErrorEvent(*this);}
-public:
-    const static std::string ErrorEventName;
-    std::string errorMessage;
-    ErrorEvent(std::string sap, std::string errorMessage):Event(ErrorEventName + sap), errorMessage(errorMessage){}
-};
-
-//EVENTO Stop di un thread
-class StopThreadEvent : public Event {
-protected:
-    Event* clone() const{return new StopThreadEvent(*this);}
-public:
-    const static std::string StopThreadEventName;
-    StopThreadEvent():Event(StopThreadEventName){}
-};
-
-//-------------------------------------------------------------------------------------------
+}//namespace Z
 #endif	/* _THREAD_H */
