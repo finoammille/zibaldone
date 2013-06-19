@@ -22,12 +22,12 @@
 #ifndef _SERIALPORTHANDLER_H
 #define	_SERIALPORTHANDLER_H
 #include "Thread.h"
-#include "LinuxSerialPort.h"
+#include "SerialPort.h"
 
 /*
  * implementa un thread in ascolto sulla porta seriale che emette l'evento
  * "rxDataEvent" ogni volta che riceve un byte sulla porta. Il nome dell'evento 
- * (eventId) e' ottenibile invocando il metodo getRxDataEventName.
+ * (eventId) e' ottenibile invocando il metodo getRxDataEventId.
  * Chi desidera ricevere l'evento deve registrarsi.
  */
 
@@ -35,19 +35,16 @@ namespace Z
 {
 //-------------------------------------------------------------------------------------------
 class SerialPortHandler : public Thread {
-protected:
-    /*
-     * in questo modo un thread che usa la seriale (praticamente tutti i driver)
-     * puo' direttamente derivare da SerialPortHandler facendo l'override del
-     * run() e gestire in modo personalizzato la porta.
-     */
-    SerialPort _sp;
-    std::string _portName;//serve per taggare univocamente gli eventi relativi ad una specifica porta
-    const std::string rxDataEventId;
-    const std::string txDataEventId;
-    const std::string serialPortErrorEventId;
+    SerialPort sp;
     bool exit;
-    void run();//ciclo del thread in ascolto sulla porta
+    void run();//ciclo del thread che gestisce le richieste di trasmissione sulla porta (writer)
+    class Reader : public Thread {
+        SerialPort& sp;
+        void run();//ciclo del thread in ascolto sulla porta 
+    public:
+        Reader(SerialPort&);
+        void Stop();
+    } reader;
 public:    
     SerialPortHandler(const std::string& portName,
         int baudRate,
@@ -59,12 +56,14 @@ public:
         bool toggleRts = false);//Constructor. Nota: ToggleDtr e ToggleRts normalmente non servono e sono impostate di
                                 //default a false. In alcuni rari casi (per esempio nello stacker controllato tramite
                                 //chip FT232RL della FTDI che simula una porta seriale via USB) occorre invertirli entrambi.
-    std::string portName();
-    std::string getRxDataEventId()const{return rxDataEventId;}//eventId ricezione emesso da SerialPortHandler
+    void Start();
+    void Stop();
+    void Join();
+    std::string getRxDataEventId(){return "rxDataEvent"+sp.portName;}//eventId ricezione emesso da SerialPortHandler
     static std::string getRxDataEventId(const std::string& port) {return "rxDataEvent"+port;}//eventId ricezione emesso da SerialPortHandler
-    std::string getTxDataEventId()const{return txDataEventId;}//eventId x richiesta di trasmissione, ricevuto da SerialPortHandler
+    std::string getTxDataEventId(){return "txDataEvent"+sp.portName;}//eventId x richiesta di trasmissione, ricevuto da SerialPortHandler 
     static std::string getTxDataEventId(const std::string& port) {return "txDataEvent"+port;}//eventId x richiesta di trasmissione, ricevuto da SerialPortHandler
-    std::string getSerialPortErrorEventId()const{return serialPortErrorEventId;}//eventId x serial error, ricevuto da SerialPortHandler
+    std::string getSerialPortErrorEventId(){return "serialPortErrorEvent"+sp.portName;}//eventId x serial error, ricevuto da SerialPortHandler
     static std::string getSerialPortErrorEventId(const std::string& port) {return "serialPortErrorEvent"+port;}//eventId x serial error, ricevuto da SerialPortHandler
 };
 //-------------------------------------------------------------------------------------------

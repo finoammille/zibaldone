@@ -3,7 +3,7 @@
  * zibaldone - a C++ library for Thread, Timers and other Stuff
  *
  * Copyright (C) 2012  Antonio Buccino
- * 
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 2 of the License, or
@@ -42,7 +42,7 @@ std::string Event::eventId()const{return _eventId;}
 Event::Event(const std::string& eventId, const unsigned char* buf, const int len):_buf(0), _len(0)
 {
     if(eventId.empty()) {
-        ziblog(LOG::ERROR, "ERROR: an instance of Event cannot have empty eventId");
+        ziblog(LOG::ERR, "ERROR: an instance of Event cannot have empty eventId");
         _eventId = "pincopallino";//assegno un nome per evitare crash.
     } else _eventId = eventId;
     if(buf && len) {
@@ -55,7 +55,7 @@ Event::Event(const std::string& eventId, const unsigned char* buf, const int len
 Event::Event(const std::string& eventId, const std::vector<unsigned char>& data):_buf(0), _len(0)
 {
     if(eventId.empty()) {
-        ziblog(LOG::ERROR, "ERROR: an instance of Event cannot have empty eventId");
+        ziblog(LOG::ERR, "ERROR: an instance of Event cannot have empty eventId");
         _eventId = "pincopallino";//assegno un nome per evitare crash.
     } else _eventId = eventId;
     if(!data.empty()) {
@@ -68,8 +68,8 @@ Event::Event(const std::string& eventId, const std::vector<unsigned char>& data)
 Event::~Event()
 {
     _eventId.clear();
-    delete[] _buf; 
-    _buf=NULL, 
+    delete[] _buf;
+    _buf=NULL,
     _len=0;
 }
 
@@ -116,30 +116,30 @@ Thread::Thread()
     _th = 0;
     _set=false;
     pthread_mutex_init(&_lockQueue, NULL);
-    pthread_mutex_init(&_oneAndOnly, NULL);
+    pthread_mutex_init(&_lockSet, NULL);
     pthread_cond_init(&_thereIsAnEvent, NULL);
 }
 
-//VERY IMPORTANT! We couldn't embed the Stop() into the Thread base class destructor because this way the thread loop 
-//function would continue running untill the base class destructor had not been called. As well known the base class 
-//destructor is called after the inherited class destructor, and so the thread loop would continue his life for a little 
-//time between the end of the inherited class destructor and the base class destructor call. This means that the thread 
+//VERY IMPORTANT! We couldn't embed the Stop() into the Thread base class destructor because this way the thread loop
+//function would continue running untill the base class destructor had not been called. As well known the base class
+//destructor is called after the inherited class destructor, and so the thread loop would continue his life for a little
+//time between the end of the inherited class destructor and the base class destructor call. This means that the thread
 //loop function could use again some member variabiles (defined in the subclass) yet destroyed by subclass destructor.
 Thread::~Thread()
 {
-    if(_set && !pthread_kill(_th, 0)) {
+    if(alive()) {
         //se sono qui e il thread loop e` ancora presente c'e` una violazione delle regole
-        //di utilizzo della classe Thread (il thread loop run deve essere obbligatoriamente 
-        //terminato - chiamando Stop o uscendo - prima di distruggere l'oggetto che incapsula 
+        //di utilizzo della classe Thread (il thread loop run deve essere obbligatoriamente
+        //terminato - chiamando Stop o uscendo - prima di distruggere l'oggetto che incapsula
         //il thread). Emetto un log di errore e provo a fare un recupero disperato....
-        ziblog(LOG::ERROR, "Thread loop (run method) MUST BE END before destroying a Thread object");
+        ziblog(LOG::ERR, "Thread loop (run method) MUST BE END before destroying a Thread object");
         Stop();//pthread_kill usata con sig=0 dice se _th è vivo. In tal caso chiamo Stop()
     }
     StopReceivingAndDiscardReceived();
 }
 
 //NOTA su ThreadLoop: un metodo statico significa che ce n'e` una sola copia! Non che puo' essere chiamato solo in un thread!
-//Quindi ognuno chiama la funzione e all'uscita dalla run() chiamata da ThreadLoop ritrova il SUO arg, ovvero il puntatore al 
+//Quindi ognuno chiama la funzione e all'uscita dalla run() chiamata da ThreadLoop ritrova il SUO arg, ovvero il puntatore al
 //allo stesso oggetto che conteneva quella particolare run())
 void * Thread::ThreadLoop(void * arg)
 {
@@ -153,22 +153,33 @@ void * Thread::ThreadLoop(void * arg)
 //la creazione di due thread (il thread va creato solo LA PRIMA VOLTA che viene chiamato il metodo Start().
 void Thread::Start()
 {
-    pthread_mutex_lock(&_oneAndOnly);
+    pthread_mutex_lock(&_lockSet);
     if(!_set) {
         pthread_create (&_th, NULL, ThreadLoop, this);
         _set=true;
     }
-    pthread_mutex_unlock(&_oneAndOnly);
+    pthread_mutex_unlock(&_lockSet);
 }
 
 void Thread::Stop()
 {
-    Event* stopThread = new Event(StopThreadEventId);
-    pushIn(stopThread);
-    if(!Join()) ziblog(LOG::WARNING, "STOP THREAD ERROR");//aspetto che sia effettivamente terminato prima di uscire 
+    pthread_mutex_lock(&_lockSet);
+    if(_set) {
+        Event* stopThread = new Event(StopThreadEventId);
+        pushIn(stopThread);
+        Join();
+        _set=false;//serve per permettere di fare nuovamente Start (ovvero ridare vita al thread che si appoggia alla
+                   //classe) permettendo il riutilizzo dell'oggetto che incapsula il thread (se non viene distrutto!)
+        _th=0;
+    }
+    pthread_mutex_unlock(&_lockSet);
 }
 
-bool Thread::Join(){return (pthread_join(_th, NULL) == 0);}
+void Thread::Join()
+{
+    int ret = pthread_join(_th, NULL);
+    if(ret == EDEADLK) ziblog(LOG::ERR, "thread cannot join himself");
+}
 
 void Thread::StopReceivingAndDiscardReceived()
 {
@@ -263,7 +274,7 @@ Event* Thread::pullOut(std::deque <std::string> eventIds, int maxWaitMsec)/* se 
 {
     eventIds.push_front(StopThreadEventId);//come spiegato sopra, DEVO sempre e comunque gestire StopThreadEvent
     if(maxWaitMsec == WAIT4EVER) {
-        ziblog(LOG::WARNING, "invalid wait forever for a specific bundle of events... set wait to default value of 1 sec to prevent starvation...");
+        ziblog(LOG::WRN, "invalid wait forever for a specific bundle of events... set wait to default value of 1 sec to prevent starvation...");
         maxWaitMsec = 1000;
     }
     std::map < std::string, std::deque < Event* > >::iterator it;
@@ -308,12 +319,27 @@ Event* Thread::pullOut(std::deque <std::string> eventIds, int maxWaitMsec)/* se 
                  * che il tempo residuo ts della pthread_cond_timedwait sia talmente esiguo da scadere quando l'esecuzione arriva alla chiamata
                  * di gettimeofday per cui timeout = true. In tal caso tutto va esattamente come se fosse scaduto il timeout prima della ricezione
                  * dell'evento atteso, solo che mi trovo fuori da "while (!timeout) anziche', come normalmente accadrebbe in questi casi, dentro
-                 * l'if(pthread_cond_timedwait(&_thereIsAnEvent, &_lockQueue, &ts)). Occorre allora rilasciare il semaforo e ritornare NULL 
+                 * l'if(pthread_cond_timedwait(&_thereIsAnEvent, &_lockQueue, &ts)). Occorre allora rilasciare il semaforo e ritornare NULL
                  * esattamente come se l'evento atteso fosse arrivato troppo in ritardo (non e' cosi' in realta', ma e' esattamente come se fosse cosi',
-                 * e questo e' l'unico modo di trattare l'evento mantenendo la coerenza rispetto al chiamante. D'altronde la colpa e' dovuta al tempo 
+                 * e questo e' l'unico modo di trattare l'evento mantenendo la coerenza rispetto al chiamante. D'altronde la colpa e' dovuta al tempo
                  * materiale per eseguire le istruzioni tra la pthread_cond_timedwait e la gettimeofday: e' il "bello" della programmazione real-time!)
                  */
 }
+
+bool Thread::alive(){return (_th && !pthread_kill(_th, 0));}
+
+void Thread::kill()
+{
+    pthread_mutex_lock(&_lockSet);
+    if(_set) {
+        pthread_cancel(_th);
+        _set=false;//serve per permettere di fare nuovamente Start (ovvero ridare vita al thread che si appoggia alla
+                   //classe) permettendo il riutilizzo dell'oggetto che incapsula il thread (se non viene distrutto!)
+        _th=0;
+    }
+    pthread_mutex_unlock(&_lockSet);
+}
+
 //-------------------------------------------------------------------------------------------
 //EVENT MANAGER
 pthread_mutex_t EventManager::_rwReq;
@@ -337,7 +363,7 @@ EventManager::EventManager()
 void EventManager::mapEvent2Receiver(const std::string& eventId, Thread *T)
 {
     if(!eventId.length()) {
-        ziblog(LOG::WARNING, "INVALID EVENT NAME!");
+        ziblog(LOG::WRN, "INVALID EVENT NAME!");
         return;
     }
     pthread_mutex_lock(&_rwReq);
@@ -352,7 +378,7 @@ void EventManager::mapEvent2Receiver(const std::string& eventId, Thread *T)
     std::deque < Thread *>* evtReceiverList = &_evtReceivers[eventId];/* lista dei tread registrati per ricevere l'evento "eventId"
                                                                          * (nel caso non ci fosse stato nessun thread registrato, ora
                                                                          * c'e una lista vuota)
-                                                                         */ 
+                                                                         */
     std::deque < Thread *>::iterator itEvtReceiverList;
     for(itEvtReceiverList = evtReceiverList->begin(); itEvtReceiverList != evtReceiverList->end(); itEvtReceiverList++) {
         if(*itEvtReceiverList == T) {//qualcuno sta facendo per errore una doppia registrazione su uno stesso evento

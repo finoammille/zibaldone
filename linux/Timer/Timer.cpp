@@ -44,14 +44,14 @@ void Timer::Start(int mSec)
 {
     if(mSec) _duration = mSec;
     if(!_duration) {
-        ziblog(LOG::WARNING, "timer %s has non valid duration value", timerId.c_str());//se sono qui, nè il costruttore ne il chiamante di Start hanno assegnato un valore utile a _duration
+        ziblog(LOG::WRN, "timer %s has non valid duration value", timerId.c_str());//se sono qui, nè il costruttore ne il chiamante di Start hanno assegnato un valore utile a _duration
         return;
     }
    
     pthread_mutex_lock(&_lock);
     if(_running) {
         timer_delete(_tId);
-        ziblog(LOG::WARNING, "timer %s previously created set to new value", timerId.c_str());
+        ziblog(LOG::WRN, "timer %s previously created set to new value", timerId.c_str());
     }
     pthread_mutex_unlock(&_lock);
     sigevent e;

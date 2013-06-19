@@ -46,6 +46,10 @@ std::string zibTools::execute(std::string cmd, bool wait4answ=true)
 std::vector<std::string> zibTools::getSerialPortList()
 {
     std::vector<std::string> result;
+
+    //TODO
+
+    /*
     std::string tmp = execute("ls /dev/ttyS* 2>/dev/null");//lista delle porte seriali
     std::stringstream lsdevttysxResult(tmp);
     while(lsdevttysxResult >> tmp) result.push_back(tmp);
@@ -55,5 +59,6 @@ std::vector<std::string> zibTools::getSerialPortList()
     tmp = execute("ls /dev/ttyACM* 2>/dev/null");//lista delle porte seriali USB cdc_acm
     std::stringstream lsdevttyacmxResult(tmp);
     while(lsdevttyacmxResult >> tmp) result.push_back(tmp);
+    */
     return result;
 }

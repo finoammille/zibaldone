@@ -33,7 +33,7 @@ namespace Z
 //NOTA: la classe Timer implementa sostanzialmente una "sveglia". L'utilizzatore, istanzia un oggetto Timer, al quale
 //assegna un nome, Alla scadenza del timer, viene emesso un evento avente il nome assegnato alla sveglia.
 //Le regole sono le solite: chi vuol ricevere l'evento deve registrarsi sull'Id (nome) dell'evento
-class Timer{ 
+class Timer { 
     timer_t _tId;
     const std::string timerId;
     int _duration;
