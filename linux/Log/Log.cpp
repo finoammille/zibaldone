@@ -26,7 +26,7 @@ namespace Z
 //-------------------------------------------------------------------------------------------
 LOG* LOG::_instance = NULL;
 bool LOG::_isRunning = false;
-LOG::Level LOG::level = LOG::ERROR;
+LOG::Level LOG::level = LOG::ERR;
 
 LOG::LOG()
 {
@@ -80,7 +80,7 @@ void LOG::enqueueMessage(LOG::Level level, const std::string& log)
 void LOG::run()
 {
     while(!exit){
-        Event* Ev = pullOut(10);//max 10 msec di attesa
+        Event* Ev = pullOut();//max 10 msec di attesa
         if(Ev){
             std::string eventId = Ev->eventId();
             if(eventId == StopThreadEventId) exit = true; 

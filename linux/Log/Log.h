@@ -47,13 +47,11 @@ class LOG : public Thread {
     bool _showLogOnConsole;
     void run();
 public:
-    static enum Level {DEBUG, INFO, WARNING, ERROR} level; 
+    static enum Level {DBG, INF, WRN, ERR} level; 
     static void set(Level lev, bool showLogOnConsole=true);//stabilisce il livello di log e se visualizzare i log anche sulla console (oltre che su log file)
     static void disable();
     static void enqueueMessage(LOG::Level, const std::string&);
 };
-
-
 
 #define ziblog(level, logMsg, arg...) \
 ({ \
@@ -69,6 +67,11 @@ public:
     <<" "<<std::setw(2)<<std::setfill('0')<<current->tm_hour \
     <<":"<<std::setw(2)<<std::setfill('0')<<current->tm_min \
     <<":"<<std::setw(2)<<std::setfill('0')<<current->tm_sec<<", "; \
+    std::string logLevel; \
+    if(level == LOG::DBG) logLevel = "(DEBUG) "; \
+    else if(level == LOG::INF) logLevel = "(INFO) "; \
+    else if(level == LOG::WRN) logLevel = "(WARNING) "; \
+    else logLevel = "(ERROR) "; \
     std::string timestamp = sstimeStamp.str(); \
     std::string position(__FILE__); \
     position+=", "; \
@@ -79,7 +82,7 @@ public:
     position+=__PRETTY_FUNCTION__; \
     position+=": "; \
     std::string msg = buffer; \
-    std::string log = timestamp + position + msg; \
+    std::string log = timestamp + logLevel + position + msg; \
     LOG::enqueueMessage(level, log); \
 })
 //-------------------------------------------------------------------------------------------

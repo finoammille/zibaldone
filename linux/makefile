@@ -39,13 +39,13 @@ endif
 
 CFLAGS = -Wall -Werror $(DEBUG) $(ARCH_CFLAGS)
 
-IFLAGS = -I./Ipc -I./Log -I./SerialPort/LinuxSerialPort -I./SerialPort -I./Thread -I./Timer -I./Tools
+IFLAGS = -I./Ipc -I./Log -I./SerialPort -I./Thread -I./Timer -I./Tools
 LFLAGS = -lpthread
 
 # dependencies
 DEPS = ./Ipc/Socket.h \
 	   ./Log/Log.h \
-	   ./SerialPort/LinuxSerialPort/LinuxSerialPort.h \
+	   ./SerialPort/SerialPort.h \
 	   ./SerialPort/SerialPortHandler.h \
 	   ./Thread/Thread.h \
 	   ./Timer/Timer.h \
@@ -54,7 +54,7 @@ DEPS = ./Ipc/Socket.h \
 # objects
 OBJ_NAMES = ./Ipc/Socket \
             ./Log/Log \
-			./SerialPort/LinuxSerialPort/LinuxSerialPort \
+			./SerialPort/SerialPort \
 			./SerialPort/SerialPortHandler \
 			./Thread/Thread \
 			./Timer/Timer \

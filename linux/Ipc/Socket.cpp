@@ -28,40 +28,71 @@ Socket::Socket(IpcType type):_ipcType(type)
 {
     int socketType = (_ipcType == LocalIpc ? PF_LOCAL : AF_INET);
     if((_sockId = socket(socketType, SOCK_STREAM, 0))<0) {
-        ziblog(LOG::ERROR, "Socket Error (%d)!", _sockId);
+        ziblog(LOG::ERR, "Socket Error (%d)!", _sockId);
         return;
     }
     if(_ipcType == NetworkIpc) {
         int optionValue = 1;
         if((setsockopt(_sockId, SOL_SOCKET, SO_REUSEADDR, &optionValue, sizeof(optionValue))<0) ||
-           (setsockopt(_sockId, SOL_SOCKET, SO_KEEPALIVE, &optionValue, sizeof(optionValue))<0)) ziblog(LOG::ERROR, "Socket Error (%d)!", errno);
+           (setsockopt(_sockId, SOL_SOCKET, SO_KEEPALIVE, &optionValue, sizeof(optionValue))<0)) ziblog(LOG::ERR, "Socket Error (%d)!", errno);
     }
 }
 
-ConnHandler::ConnHandler(int sockId):_sockId(sockId)
+ConnHandler::ConnHandler(int sockId):_sockId(sockId), reader(_sockId)
 {
     exit = false;
     std::stringstream sap;
     sap<<_sockId;
     _sap = sap.str();
-    txDataEventId="txDataEvent"+_sap;
-    rxDataEventId="rxDataEvent"+_sap;
-    register2Event(txDataEventId);//autoregistrazione sugli eventi di richiesta di trasmissione inviatigli dagli utilizzatori
+    register2Event(getTxDataEventId());//autoregistrazione sugli eventi di richiesta di trasmissione inviatigli dagli utilizzatori
 }
 
 void ConnHandler::run()
 {
+    while(!exit){
+        Event* Ev = pullOut();
+        if(Ev){
+            std::string eventId = Ev->eventId();
+            ziblog(LOG::INF, "received event %s", eventId.c_str());
+            if(eventId == StopThreadEventId) exit = true;
+            if(eventId == getTxDataEventId()) {
+                write(_sockId, Ev->buf(), Ev->len());
+                delete Ev;
+            }
+        }
+    }
+}
+
+void ConnHandler::Start()
+{
+    Thread::Start();
+    reader.Start();
+}
+
+void ConnHandler::Stop()
+{
+    Thread::Stop();
+    reader.Stop();
+}
+
+void ConnHandler::Join()
+{
+    if(alive()) {
+        reader.Join();
+        Thread::Stop();
+    } else reader.Stop();
+}
+
+ConnHandler::Reader::Reader(const int& sockId):_sockId(sockId){}
+
+void ConnHandler::Reader::run()                                                                                                                                           
+{  
+    std::stringstream sap;
+    sap<<_sockId;
+    std::string rxDataEventId = "rxDataEvent"+sap.str();
     const int maxSize = 1024;
     unsigned char rxbyte[maxSize];
-    int nonBlockingMode;//occorre ora cambiare la modalita' di accesso al file descriptor del socket e renderla non bloccante,
-                        //altrimenti il thread resta inchiodato sulla read senza poter fare altro sinche` non arriva qualcosa...
-    if((nonBlockingMode = fcntl(_sockId, F_GETFL) < 0)) {
-        ziblog(LOG::ERROR, "Setting Non Blocking mode on Socket (%d) has failed!", _sockId);
-        return;
-    }
-    nonBlockingMode = (nonBlockingMode | O_NONBLOCK);
-    fcntl(_sockId, F_SETFL, nonBlockingMode);
-    while(!exit){
+    for(;;) {
         int len = 0;
         if((len = read(_sockId, rxbyte, maxSize)) > 0) {
             Event rx(rxDataEventId, rxbyte, len);
@@ -70,18 +101,10 @@ void ConnHandler::run()
                                     * del socket non devo farla qui perche' la fa gia' il distruttore
                                     * di ConnHandler
                                     */
-        Event* Ev = pullOut(10);//max 1/100 di secondo di attesa
-        if(Ev){
-            std::string eventId = Ev->eventId();
-            ziblog(LOG::INFO, "received event %s", eventId.c_str());
-            if(eventId == StopThreadEventId) exit = true;
-            if(eventId == txDataEventId) {
-                write(_sockId, Ev->buf(), Ev->len());
-                delete Ev;
-            }
-        }
     }
 }
+
+void ConnHandler::Reader::Stop(){kill();}
 
 Server::Server(int port):Socket(Socket::NetworkIpc)
 {
@@ -104,28 +127,29 @@ Server::Server(const std::string& IpcSocketName):Socket(Socket::LocalIpc)
 void Server::bindAndListen(sockaddr *addr, int addrlen)
 {
     if(bind(_sockId, addr, addrlen)<0){
-        ziblog(LOG::ERROR, "Socket Bind Error (%d)!", _sockId);
+        ziblog(LOG::ERR, "Socket Bind Error (%d)!", _sockId);
         return;
     }
-    if(listen(_sockId, 1) < 0) ziblog(LOG::ERROR, "Socket Listening Error");
+    if(listen(_sockId, 1) < 0) ziblog(LOG::ERR, "Socket Listening Error");
 }
 
 ConnHandler* Server::Accept()
 {
     int sockConnHandlerId = accept(_sockId, NULL, NULL);//rimane bloccato qui sinche` non arriva una richiesta di connessione.
     if(sockConnHandlerId < 0) {
-        ziblog(LOG::ERROR, "Connection Error (%d)", errno);
+        ziblog(LOG::ERR, "Connection Error (%d)", errno);
         return NULL;
     } else return new ConnHandler(sockConnHandlerId);//istanzio il thread che gestisce la connessione 
 }
 
-Client::Client(const std::string& remoteAddr, int port):Socket(Socket::NetworkIpc)
+Client::Client(std::string& remoteAddr, int port):Socket(Socket::NetworkIpc)
 {
+    if(remoteAddr=="localhost") remoteAddr="127.0.0.1";
     sockaddr_in* addr = new sockaddr_in();
     addr->sin_family = AF_INET;
     addr->sin_port = htons(port);
     _addrlen = sizeof(*addr);
-    if(!inet_pton(AF_INET, remoteAddr.c_str(), &addr->sin_addr)) ziblog(LOG::WARNING, "inet_pton (%s) has failed!", remoteAddr.c_str());
+    if(!inet_pton(AF_INET, remoteAddr.c_str(), &addr->sin_addr)) ziblog(LOG::ERR, "inet_pton (%s) has failed!", remoteAddr.c_str());
     _addr = (sockaddr* )addr;
 }
 
@@ -147,7 +171,7 @@ Client::~Client()
 ConnHandler* Client::Connect()
 {
     if(connect(_sockId, _addr, _addrlen) < 0) {
-        ziblog(LOG::ERROR, "connection to %s has failed (%d)", inet_ntoa(((struct sockaddr_in *)_addr)->sin_addr), errno);
+        ziblog(LOG::ERR, "connection to %s has failed (%d)", inet_ntoa(((struct sockaddr_in *)_addr)->sin_addr), errno);
         return NULL;
     }
     return new ConnHandler(_sockId);

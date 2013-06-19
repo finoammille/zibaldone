@@ -3,7 +3,7 @@
  * zibaldone - a C++ library for Thread, Timers and other Stuff
  *
  * Copyright (C) 2012  Antonio Buccino
- * 
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 2 of the License, or
@@ -40,9 +40,9 @@
 Utilizzo:
 
 1) istanziare un oggetto Server specificando la porta "P" di ascolto
-2) istanziare un oggetto Client specificando l'IP e la porta "P" 
+2) istanziare un oggetto Client specificando l'IP e la porta "P"
    su cui e` in ascolto il server
-3) per connettere client con server, chiamare Accept() sul server, 
+3) per connettere client con server, chiamare Accept() sul server,
    e successivamente chiamare Connect() sul client. Entrambi i metodi restituiscono
    (rispettivamente su server e client) un puntatore ad un oggetto ConnHandler
 4) per ricevere dati da una connessione occorre registrarsi sull'evento il cui id viene
@@ -67,14 +67,22 @@ class ConnHandler : public Thread {
     int _sockId;
     std::string _sap;//serve per taggare univocamente gli eventi relativi ad uno specifico socket
     bool exit;
-    void run();
+    void run();//ciclo del thread che gestisce la scrittura
+    class Reader : public Thread {
+        const int& _sockId;
+        void run();//ciclo del thread per la lettura
+    public:
+        Reader(const int&);
+        void Stop();
+    } reader;
     ConnHandler(int sockId);//ConnHandler non deve essere istanziabile, ma solo ottenibile effettuando una connessione.
-    std::string txDataEventId;//id dell'evento di richiesta trasmissione dati sul socket (evento ricevuto e gestito da ConnHandler)
-    std::string rxDataEventId;//id dell'evento di notifica ricezione dati sul socket (evento emesso da ConnHandler)
 public:
     ~ConnHandler(){close(_sockId);}
-    std::string getTxDataEventId()const{return txDataEventId;}
-    std::string getRxDataEventId()const{return rxDataEventId;}
+    void Start();
+    void Stop();
+    void Join();
+    std::string getTxDataEventId(){return "txDataEvent"+_sap;}//id dell'evento di richiesta trasmissione dati sul socket (evento ricevuto e gestito da ConnHandler)
+    std::string getRxDataEventId(){return "rxDataEvent"+_sap;}//id dell'evento di notifica ricezione dati sul socket (evento emesso da ConnHandler)
 };
 
 class Server : protected Socket {
@@ -90,7 +98,7 @@ class Client : protected Socket {
     sockaddr* _addr;
     int _addrlen;
 public:
-    Client(const std::string& remoteAddr, int port);
+    Client(std::string& remoteAddr, int port);
     Client(const std::string& IpcSocketName);
     ~Client();
     ConnHandler* Connect();
