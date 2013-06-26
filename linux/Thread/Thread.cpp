@@ -98,6 +98,10 @@ Event & Event::operator = (const Event &src)
 
 void Event::emitEvent()
 {
+    if(_eventId==StopThreadEventId) {
+        ziblog(LOG::ERR, "Invalid emitEvent with eventId=StopThreadEventId (it's reserved). Call Stop() instead");
+        return;
+    }
     std::deque < Thread * > listeners;
     pthread_mutex_lock(&EventManager::_rwReq);
     if(EventManager::_pendingWriters) pthread_cond_wait(&EventManager::_noPendingWriters, &EventManager::_rwReq);
@@ -167,7 +171,7 @@ void Thread::Stop()
     if(_set) {
         Event* stopThread = new Event(StopThreadEventId);
         pushIn(stopThread);
-        Join();
+        Join();//N.B.: attenzione a non fare confusione! non sto facendo "autojoin" la classe incapsula i dati ma il thread gira indipendentemente!
         _set=false;//serve per permettere di fare nuovamente Start (ovvero ridare vita al thread che si appoggia alla
                    //classe) permettendo il riutilizzo dell'oggetto che incapsula il thread (se non viene distrutto!)
         _th=0;
