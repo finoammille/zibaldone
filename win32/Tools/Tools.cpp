@@ -20,7 +20,13 @@
  */
 
 #include "Tools.h"
+#include "Log.h"
+#include <windows.h>
 
+
+namespace Z 
+{
+//-------------------------------------------------------------------------------------------
 //NOTA: alcuni comandi non ricevono una risposta dall'OS (per esempio
 //quando lancio un programma esterno in background con "&"). In questi
 //casi se lascio wait4answ a true (com'e' di default) la fgets rimane
@@ -42,7 +48,7 @@ std::string zibTools::execute(std::string cmd, bool wait4answ=true)
                                                              //ritorno la stringa vuota (che al chiamante non serve,
                                                              //dato che ha deciso di non leggere la risposta)
 }
-
+//-------------------------------------------------------------------------------------------
 std::vector<std::string> zibTools::getSerialPortList()
 {
     std::vector<std::string> result;
@@ -57,3 +63,133 @@ std::vector<std::string> zibTools::getSerialPortList()
     while(lsdevttyacmxResult >> tmp) result.push_back(tmp);
     return result;
 }
+//-------------------------------------------------------------------------------------------
+currentDateTime::currentDateTime()
+{
+	SYSTEMTIME now;
+	GetLocalTime(&now);
+    year=now.wYear;
+    month=now.wMonth;
+    day=now.wDay;
+    hour=now.wHour;
+    min=now.wMinute;
+    sec=now.wSecond;
+}
+//-------------------------------------------------------------------------------------------
+std::vector<unsigned char> serializeStdString (const std::string& o)
+{
+    //la lunghezza della stringa messa all'inizio serve per poter concatenare diversi dati
+    //serializzati (altrimenti non saprei dove finisce la serializzazione della stringa e
+    //dove inizia quella di un'altro dato!
+    std::vector<unsigned char> sStdS;
+    std::vector<unsigned char> sStdSLen = serialize((int)(o.size()));
+    std::copy(sStdSLen.begin(), sStdSLen.end(), std::back_inserter(sStdS));
+    for(size_t i=0; i<o.size(); i++) sStdS.push_back(o[i]);
+    return sStdS;
+}
+
+std::string deserializeStdString (std::vector<unsigned char> & s)
+{
+    std::string ret;
+    int sLen = deserialize<int>(&s[0]);
+    for(int i=4; i<sLen+(int)(sizeof(int)); i++) ret+=s[i];
+    s.erase(s.begin(),s.begin()+sLen+(int)(sizeof(int)));
+    return ret;
+}
+//-------------------------------------------------------------------------------------------
+// CONFIGURATION FILE FACILITIES
+
+configFileHandler::configFileHandler(std::string configFile, 
+                                     std::map<std::string, std::string> configData, 
+                                     std::vector<char> commentTags) :configFile(configFile), 
+                                                                     configData(configData), 
+                                                                     commentTags(commentTags)
+{
+    if(configFile.empty()){
+        std::cerr<<"invalid file name";
+        return;
+    }
+    if(commentTags.empty()) {//se non specificato diversamente, di default sono commenti le linee che iniziano con "#" o con ";"
+        this->commentTags.push_back('#');
+        this->commentTags.push_back(';');
+    }
+}
+
+void configFileHandler::read()
+{
+    std::ifstream cf(configFile.c_str());
+    if(!cf) {
+        std::cerr<<"configuration file not found!";
+        return;
+    }
+    std::string s, key, value;
+    while (std::getline(cf, s)) {
+        std::string::size_type begin=s.find_first_not_of(" \f\t\v");
+        if(begin==std::string::npos) continue;//salto le linee vuote
+        if(std::string(commentTags.begin(), commentTags.end()).find(s[begin])!=std::string::npos) continue;//salto i commenti
+        //estrazione del nome del parametro (key)
+        std::string::size_type end=s.find('=', begin);
+        key=s.substr(begin, end-begin);
+        key.erase(key.find_last_not_of(" \f\t\v")+1);//elimino gli eventuali spazi iniziali e finali
+        if(key.empty()) continue;//scarto eventuali valori vuoti (parametro nel file ma nessun valore)
+        //estrazione del valore corrispondente (value)
+        begin=s.find_first_not_of(" \f\n\r\t\v", end+1);
+        end=s.find_last_not_of(" \f\n\r\t\v")+1;
+        value=s.substr(begin, end-begin);
+        //inserisco la coppia (key, value) nella mappa
+        configData[key]=value;
+    }
+}
+
+void configFileHandler::write()
+{
+    std::ofstream cf(configFile.c_str(), std::fstream::trunc);
+    if(!cf) {
+        std::cerr<<"configuration file not found!";
+        return;
+    }
+    std::map <std::string, std::string>::const_iterator iter;
+    for (iter = configData.begin(); iter != configData.end(); iter++) cf<<iter->first<<" = "<<iter->second<<std::endl;
+}
+
+std::map<std::string, std::string> configFileHandler::getConfigData(){return configData;}
+
+std::string configFileHandler::getRawValue(const std::string & parameter)
+{
+    std::string key;
+    if(configData.count(parameter)) key=configData.find(parameter)->second;
+    return key;
+}
+
+void configFileHandler::addOrUpdateKeyValue(const std::string& parameter, const std::string& value)
+{
+    configData[parameter]=value;//aggiorno il parametro esistente o se non c'e` creo una entry nuova
+}
+
+bool configFileHandler::getBoolValue(bool& dest, std::string param)
+{
+    bool ret=false;
+    if(configData.count(param)) {
+        ret=true;
+        std::string value=configData[param];
+        if(value == "true") dest = true;
+        else if(value == "false") dest = false;
+        else {
+            ret=false;
+            ziblog(LOG::ERR, "invalid %s value (%s) ... It's supposed to be bool", param.c_str(), value.c_str());
+        }
+    } else ziblog(LOG::ERR, "parameter %s not found in condifuration data", param.c_str());
+    return ret;
+}
+
+bool configFileHandler::getIntValue(int& dest, std::string param)
+{
+    bool ret=false;
+    if(configData.count(param)) {
+        ret=true;
+        dest=atoi((configData[param]).c_str());
+    } else ziblog(LOG::ERR, "parameter %s not found in condifuration data", param.c_str());
+    return ret;
+}
+//-------------------------------------------------------------------------------------------
+}//namespace Z

@@ -113,6 +113,14 @@ void Event::emitEvent()
     if(!--EventManager::_pendingReaders) pthread_cond_signal(&EventManager::_noPendingReaders);
     pthread_mutex_unlock(&EventManager::_rwReq);
 }
+
+EventObject::EventObject(const std::string& eventId):Event(eventId){}
+
+EventObject & EventObject::operator = (const EventObject& src)
+{
+    Event::operator = (src);
+    return *this;
+}
 //-------------------------------------------------------------------------------------------
 //THREAD
 Thread::Thread()

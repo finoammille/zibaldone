@@ -252,6 +252,7 @@ SerialPort::SerialPort(
     SetLocal(true);
     SetFlowControl(flwctrl);
     SetRaw(true, 0, 10);
+    tcflush(fd, TCIFLUSH);
     tcsetattr(fd,TCSANOW,&_serialPortSettings);
     usleep(10000);//10 msec per dare tempo alla seriale. In genere non serve, ma incerti casi (x es. seriali ftdi su hub usb) e` necessario
 }

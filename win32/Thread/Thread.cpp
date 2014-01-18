@@ -130,6 +130,14 @@ void Event::emitEvent()
     if(!--EventManager::_pendingReaders) SetEvent(EventManager::_noPendingReaders);
     ReleaseMutex(EventManager::_rwReq);
 }
+
+EventObject::EventObject(const std::string& eventId):Event(eventId){}
+
+EventObject & EventObject::operator = (const EventObject& src)
+{
+    Event::operator = (src);
+    return *this;
+}
 //-------------------------------------------------------------------------------------------
 //THREAD
 Thread::Thread()

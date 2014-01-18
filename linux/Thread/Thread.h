@@ -61,23 +61,94 @@ ha il pregio della semplicita` ma per contro occorre ricordare che l'individuazi
 bisogna fare attenzione ai nomi degli eventi quando un thread si registra per riceverli (lo fa dicendo il nome degli eventi che vuole
 ricevere): registrarsi su un nome sbagliato (magari a causa di una lettera minuscola/maiuscola) causa la non ricezione dell'evento!
 
+25/11/13
+Ci sono due modi per definire un evento:
+
+1) istanziare un oggetto di tipo Event
+
+2) derivare da EventObject.
+
+   EventObject deriva da Event, per cui tutti i metodi per la gestione degli eventi (pullOut, emitEvent, ...) sono utilizzabili esattamente
+   come con Event
+
+   In questo caso un evento è un oggetto qualsiasi identificato da una stringa. Se si definisce un evento derivando
+   da EventObject occorre implementare il metodo clone() che deve fare una deep copy dell'oggetto. Se si rispetta la regola del big 3 (se  si
+   definisce uno qualsiasi tra distruttore, costruttore di copia, overload dell'operatore di assegnazione allora occorre quasi sicuramente
+   definire anche gli altri due) allora il metodo clone puo` banalmente essere definito nella classe derivata come
+
+   EventObject* clone()const{return new EventObject(*this);}
+
+   Ovviamente non posso definirlo nella classe EventObject (in cui clone è puramente virtuale per appunto imporre l'implementazione nelle classi
+   derivate) perchè clonerebbe EventObject invece della classe derivata.
+
+   ATTENZIONE! l'overload dell'operatore di assegnazione cosi` come il costruttore di copia devono fare la deep copy dei dati dell'oggetto che deriva
+   da EventObject e devono copiare l' eventId altrimenti l'evento una volta copiato o assegnato non sarà più identificabile!
+
+   In altri termini:
+
+   sia Ev la classe derivata da EventObject. 
+   
+   L'overload del costruttore di copia (se necessario) dovrà avere la forma:
+
+   Ev::Ev(const Ev& obj):EventObject(obj)
+   {
+       ...
+   }
+
+   oppure, 
+
+   Ev::Ev(const Ev& obj):EventObject(_eventId)
+   {
+       ...
+   }
+
+   Per quando riguarda invece l'overload dell'operatore di assegnazione, la forma dovrà essere:
+
+   Ev & Ev::operator = (const Ev &src)
+   {
+       EventObject::operator= (src);
+
+       ...
+
+   }
+
+   oppure
+
+   Ev & Ev::operator = (const Ev &src)
+   {
+       
+       _eventId=src._eventId;
+
+       ...
+
+   }
+
 */
 class Event {
     friend class Thread;
-    std::string _eventId;
     unsigned char* _buf;
     int _len;
-    Event* clone() const;
+    virtual Event* clone() const;
+protected:
+    std::string _eventId;
 public:
     unsigned char* buf() const;
     int len() const;
     std::string eventId() const;
     Event(const std::string& eventId, const unsigned char* buf=NULL, const int len=0);
     Event(const std::string& eventId, const std::vector<unsigned char>&);
-    ~Event();
+    virtual ~Event();
     Event(const Event &);
     Event & operator = (const Event &);
     void emitEvent();//L'emissione dell'evento comporta la notifica a tutti i thread registrati sull'evento
+};
+
+class EventObject : public Event {
+protected:
+    virtual Event* clone() const=0;
+public:
+    EventObject(const std::string &);
+    EventObject & operator = (const EventObject &);
 };
 
 //-------------------------------------------------------------------------------------------

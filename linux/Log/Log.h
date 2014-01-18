@@ -55,8 +55,8 @@ public:
 
 #define ziblog(level, logMsg, arg...) \
 ({ \
-    char buffer[1024]; \
-    sprintf(buffer, (logMsg), ##arg); \
+    char bUfFeR[1024]; \
+    sprintf(bUfFeR, (logMsg), ##arg); \
     time_t now; \
     time(&now); \
     struct tm* current = localtime(&now); \
@@ -68,9 +68,9 @@ public:
     <<":"<<std::setw(2)<<std::setfill('0')<<current->tm_min \
     <<":"<<std::setw(2)<<std::setfill('0')<<current->tm_sec<<", "; \
     std::string logLevel; \
-    if(level == LOG::DBG) logLevel = "(DEBUG) "; \
-    else if(level == LOG::INF) logLevel = "(INFO) "; \
-    else if(level == LOG::WRN) logLevel = "(WARNING) "; \
+    if((level) == LOG::DBG) logLevel = "(DEBUG) "; \
+    else if((level) == LOG::INF) logLevel = "(INFO) "; \
+    else if((level) == LOG::WRN) logLevel = "(WARNING) "; \
     else logLevel = "(ERROR) "; \
     std::string timestamp = sstimeStamp.str(); \
     std::string position(__FILE__); \
@@ -81,7 +81,7 @@ public:
     position+=", "; \
     position+=__PRETTY_FUNCTION__; \
     position+=": "; \
-    std::string msg = buffer; \
+    std::string msg = bUfFeR; \
     std::string log = timestamp + logLevel + position + msg; \
     LOG::enqueueMessage(level, log); \
 })
@@ -89,3 +89,11 @@ public:
 }//namespace Z
 #endif	/* _LOG_H */
 
+/*
+NOTA: mi e` capitato di avere un conflitto sul nome a causa buffer definito nella macro ziblog!
+Trattandosi di una macro, e` difficile accorgersi del problema e l'errore dato dal compilatore
+sembra strano ... invece ha ragione!
+Usare "buffer" non e` una buona idea dato che si tratta di un nome utilizzato frequentemente.
+Per ridurre la probabilita` di avere problemi analoghi in futuro, ho rinominato buffer come
+bUfFeR, che difficilmente sara` usato!!!!
+*/
