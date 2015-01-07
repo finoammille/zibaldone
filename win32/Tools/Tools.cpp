@@ -1,13 +1,12 @@
 /*
  *
- * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * zibaldone - a C++/Java library for Thread, Timers and other Stuff
  *
  * Copyright (C) 2012  Antonio Buccino
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 2 of the License, or
- * (at your option) any later version.
+ * the Free Software Foundation, version 2.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -32,7 +31,7 @@ namespace Z
 //casi se lascio wait4answ a true (com'e' di default) la fgets rimane
 //bloccata in attesa di dati sullo stream ma i dati non arriveranno mai!
 //In questi casi e` necessario impostare wait4answ a false.
-std::string zibTools::execute(std::string cmd, bool wait4answ=true)
+std::string OsCmd::execute(std::string cmd, bool wait4answ=true)
 {
     char buffer[3072];//3k buffer... dovrebbe bastare!
     std::string out;
@@ -49,7 +48,7 @@ std::string zibTools::execute(std::string cmd, bool wait4answ=true)
                                                              //dato che ha deciso di non leggere la risposta)
 }
 //-------------------------------------------------------------------------------------------
-std::vector<std::string> zibTools::getSerialPortList()
+std::vector<std::string> OsCmd::getSerialPortList()
 {
     std::vector<std::string> result;
     std::string tmp = execute("ls /dev/ttyS* 2>/dev/null");//lista delle porte seriali

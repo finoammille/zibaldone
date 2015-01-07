@@ -1,13 +1,12 @@
 /*
  *
- * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * zibaldone - a C++/Java library for Thread, Timers and other Stuff
  *
  * Copyright (C) 2012  Antonio Buccino
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 2 of the License, or
- * (at your option) any later version.
+ * the Free Software Foundation, version 2.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,12 +22,25 @@
 #define	_SERIALPORTHANDLER_H
 #include "Thread.h"
 #include "SerialPort.h"
+#include <sys/eventfd.h>
 
 /*
- * implementa un thread in ascolto sulla porta seriale che emette l'evento
- * "rxDataEvent" ogni volta che riceve un byte sulla porta. Il nome dell'evento 
- * (eventId) e' ottenibile invocando il metodo getRxDataEventId.
- * Chi desidera ricevere l'evento deve registrarsi.
+ * implementa un thread che gestisce la porta seriale.
+ *
+ * 1) SerialPortHandler emette un evento di tipo RawByteBufferData con label = "rxDataEventxxx"
+ *    dove "xxx" identifica univocamente la porta seriale gestita da SerialPortHandler (x es. 
+ *    /dev/ttyS0) ogni volta che riceve un burst di byte sulla porta. Il nome dell'evento (label) 
+ *    e' ottenibile invocando il metodo getRxDataLabel. Chi desidera ricevere l'evento deve registrarsi.
+ *
+ * 2) SerialPortHandler e` registrato per ricevere eventi di tipo RawByteBufferData con label = 
+ *    "txDataEventxxx" dove "xxx" identifica univocamente la porta seriale gestita da SerialPortHandler 
+ *    (x es. Quindi ogni volta che si vuole trasmettere dei byte sulla porta basta emettere un evento di 
+ *    tipo RawByteBufferData avente come label la stringa identificativa ottenibile invocando il metodo 
+ *    getTxDataLabel.
+ *
+ * 3) SerialPortHandler emette un evento zibErr con label = "serialPortErrorEventxxx" dove "xxx" 
+ *    identifica univocamente la porta seriale gestita da SerialPortHandler (x es. /dev/ttyS0) in caso di 
+ *    errore Il nome dell'evento (label) e' ottenibile invocando il metodo getSerialPortErrorLabel
  */
 
 namespace Z
@@ -39,10 +51,13 @@ class SerialPortHandler : public Thread {
     bool exit;
     void run();//ciclo del thread che gestisce le richieste di trasmissione sulla porta (writer)
     class Reader : public Thread {
+        int efd; //Event file descriptor
+        bool exit;
         SerialPort& sp;
         void run();//ciclo del thread in ascolto sulla porta 
     public:
         Reader(SerialPort&);
+        void Start();
         void Stop();
     } reader;
 public:    
@@ -59,12 +74,12 @@ public:
     void Start();
     void Stop();
     void Join();
-    std::string getRxDataEventId(){return "rxDataEvent"+sp.portName;}//eventId ricezione emesso da SerialPortHandler
-    static std::string getRxDataEventId(const std::string& port) {return "rxDataEvent"+port;}//eventId ricezione emesso da SerialPortHandler
-    std::string getTxDataEventId(){return "txDataEvent"+sp.portName;}//eventId x richiesta di trasmissione, ricevuto da SerialPortHandler 
-    static std::string getTxDataEventId(const std::string& port) {return "txDataEvent"+port;}//eventId x richiesta di trasmissione, ricevuto da SerialPortHandler
-    std::string getSerialPortErrorEventId(){return "serialPortErrorEvent"+sp.portName;}//eventId x serial error, ricevuto da SerialPortHandler
-    static std::string getSerialPortErrorEventId(const std::string& port) {return "serialPortErrorEvent"+port;}//eventId x serial error, ricevuto da SerialPortHandler
+    std::string getRxDataLabel(){return "rxDataEvent"+sp.portName;}//label ricezione emesso da SerialPortHandler
+    static std::string getRxDataLabel(const std::string& port) {return "rxDataEvent"+port;}//label ricezione emesso da SerialPortHandler
+    std::string getTxDataLabel(){return "txDataEvent"+sp.portName;}//label x richiesta di trasmissione, ricevuto da SerialPortHandler 
+    static std::string getTxDataLabel(const std::string& port) {return "txDataEvent"+port;}//label x richiesta di trasmissione, ricevuto da SerialPortHandler
+    std::string getSerialPortErrorLabel(){return "serialPortErrorEvent"+sp.portName;}//label x serial error, ricevuto da SerialPortHandler
+    static std::string getSerialPortErrorLabel(const std::string& port) {return "serialPortErrorEvent"+port;}//label x serial error, ricevuto da SerialPortHandler
 };
 //-------------------------------------------------------------------------------------------
 }//namespace Z

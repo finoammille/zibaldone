@@ -1,13 +1,12 @@
 /*
  *
- * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * zibaldone - a C++/Java library for Thread, Timers and other Stuff
  *
  * Copyright (C) 2012  Antonio Buccino
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 2 of the License, or
- * (at your option) any later version.
+ * the Free Software Foundation, version 2.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -20,6 +19,7 @@
  */
 
 #include "Timer.h"
+#include "Events.h"
 
 namespace Z
 {
@@ -36,18 +36,17 @@ void Timer::onTimeout(sigval_t val)
     pthread_mutex_lock(&(((Timer*)val.sival_ptr)->_lock));
     ((Timer*)val.sival_ptr)->_running = false;
     pthread_mutex_unlock(&(((Timer*)val.sival_ptr)->_lock));
-    Event timeout(((Timer*)val.sival_ptr)->timerId);
+    TimeoutEvent timeout(((Timer*)val.sival_ptr)->timerId);
     timeout.emitEvent();
 }
 
 void Timer::Start(int mSec)
 {
-    if(mSec) _duration = mSec;
+    if(mSec!=-1) _duration = mSec;
     if(!_duration) {
         ziblog(LOG::WRN, "timer %s has non valid duration value", timerId.c_str());//se sono qui, nè il costruttore ne il chiamante di Start hanno assegnato un valore utile a _duration
         return;
-    }
-   
+    } 
     pthread_mutex_lock(&_lock);
     if(_running) {
         timer_delete(_tId);
@@ -61,8 +60,8 @@ void Timer::Start(int mSec)
     e.sigev_notify_attributes = NULL;
     timer_create(CLOCK_REALTIME, &e, &_tId);
     itimerspec timerspec;
-    timerspec.it_value.tv_sec = mSec/1000;
-    timerspec.it_value.tv_nsec = (mSec%1000)*1000000;
+    timerspec.it_value.tv_sec = _duration/1000;
+    timerspec.it_value.tv_nsec = (_duration%1000)*1000000;
     timerspec.it_interval.tv_sec = 0;
     timerspec.it_interval.tv_nsec = 0;
     timer_settime(_tId, 0, &timerspec, NULL);

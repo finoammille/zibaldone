@@ -1,13 +1,12 @@
 ########################################################################
 #
-# zibaldone - a C++ library for Thread, Timers and other Stuff
+# zibaldone - a C++/Java library for Thread, Timers and other Stuff
 #
 # Copyright (C) 2012  Antonio Buccino
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 2 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation, version 2.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -50,6 +49,7 @@ IFLAGS = -I. \
 	 -I$(SYSHPATH) \
 	 -I./Timer \
 	 -I./Ipc \
+	 -I./Events \
 	 -I./SerialPort \
 	 -I./Tools
 
@@ -87,9 +87,12 @@ ARFLAGS = rcs
 # dependencies
 DEPS = Thread/Thread.h \
 	   Log/Log.h \
-	   Ipc/Socket.h \
+	   Ipc/TcpIpc.h \
+	   Ipc/UdpIpc.h \
+	   Events/Events.h \
 	   SerialPort/SerialPort.h \
 	   SerialPort/SerialPortHandler.h \
+	   Timer/Timer.h \
 	   Tools/Tools.h
 
 # objects
@@ -97,7 +100,9 @@ OBJ = Thread/Thread.o \
 	  Log/Log.o \
 	  Timer/Timer.o \
 	  Log/Log.o \
-	  Ipc/Socket.o \
+	  Ipc/TcpIpc.o \
+	  Ipc/UdpIpc.o \
+	  Events/Events.o \
 	  SerialPort/SerialPort.o \
 	  SerialPort/SerialPortHandler.o \
 	  Tools/Tools.o
@@ -108,13 +113,18 @@ OBJ = Thread/Thread.o \
 	$(CC) -c -o $@ $< $(DFLAGS) $(CFLAGS) $(IFLAGS) 
 #nota: $@ e' il nome del target (%.o), $< e' il nome della prima dipendenza (%.cpp)
 
-zibaldoneWin32: $(OBJ)
+zibaldone: zibaldoneDynamic zibaldoneStatic
+#nota: $^ e' la lista delle dipendenze ($(OBJ))
+
+zibaldoneDynamic: $(OBJ)
+	@echo "building $@"
+	$(CC) -o $@.dll $(DLLFLAGS) $^ $(LFLAGS)
+	mv $@.dll ./build/zibaldoneWin32.dll
+
+zibaldoneStatic: $(OBJ)
 	@echo "building $@"
 	$(AR) $(ARFLAGS) lib$@.a $(^)
-	mv lib$@.a ./build
-	$(CC) -o $@.dll $(DLLFLAGS) $^ $(LFLAGS)
-	mv $@.dll ./build
-#nota: $^ e' la lista delle dipendenze ($(OBJ))
+	mv lib$@.a ./build/libzibaldoneWin32.a
 
 clean:
 	rm -f ./build/zibaldoneWin32.dll ./build/libzibaldoneWin32.a $(OBJ)

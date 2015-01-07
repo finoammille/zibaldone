@@ -1,13 +1,12 @@
 /*
  *
- * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * zibaldone - a C++/Java library for Thread, Timers and other Stuff
  *
  * Copyright (C) 2012  Antonio Buccino
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 2 of the License, or
- * (at your option) any later version.
+ * the Free Software Foundation, version 2.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -29,8 +28,9 @@
 #include <iomanip>
 
 // Utilizzo di log:
-// 1) chiamare LOG::set() per impostare il livello di log e se visualizzare
-//    i log anche su console (di default il log parte disabilitato)
+// 1) chiamare LOG::set() per impostare la directory in cui andranno i log, il prefisso 
+//    per il file di log, il livello di log, la dimensione del buffer di log, se 
+//    visualizzare i log anche su console (di default il log parte disabilitato)
 // 2) una volta abilitato il log chiamare ziblog per loggare
 // 3) chiamare LOG::disable() per terminare il log e disabilitarlo (disable chiude il file
 //    di log, stoppa il thread che serializza le richieste di log e dealloca la memoria
@@ -39,7 +39,8 @@ namespace Z
 {
 //-------------------------------------------------------------------------------------------
 class LOG : public Thread {
-    LOG();
+    LOG(const std::string&, const std::string&);
+    static int _bufferSize;
     static bool _isRunning;
     std::ofstream logFile;
     static LOG* _instance;
@@ -47,16 +48,22 @@ class LOG : public Thread {
     bool _showLogOnConsole;
     void run();
 public:
-    static enum Level {DBG, INF, WRN, ERR} level; 
-    static void set(Level lev, bool showLogOnConsole=true);//stabilisce il livello di log e se visualizzare i log anche sulla console (oltre che su log file)
+    static enum Level {DBG, INF, WRN, ERR} level;     
+    static void set(const std::string& logFileDstDirPath, const std::string& logFileNamePrefix, Level logLev, bool showLogOnConsole=true, int bufferSize=4096);
+    static int bufferSize();
     static void disable();
     static void enqueueMessage(LOG::Level, const std::string&);
 };
 
 #define ziblog(level, logMsg, arg...) \
 ({ \
-    char bUfFeR[1024]; \
-    sprintf(bUfFeR, (logMsg), ##arg); \
+    const int ziblogMaxLogSize=LOG::bufferSize(); \
+    char bUfFeR[ziblogMaxLogSize]; \
+    if (snprintf(bUfFeR, ziblogMaxLogSize, (logMsg), ##arg) >= ziblogMaxLogSize) { \
+        std::string truncatedWarning="...TRUNCATED!"; \
+        int warningMsgLen = truncatedWarning.length(); \
+        for(int i=ziblogMaxLogSize-warningMsgLen-1, j=0; i<ziblogMaxLogSize && j<warningMsgLen; i++, j++) bUfFeR[i]=truncatedWarning[j]; \
+    } \
     time_t now; \
     time(&now); \
     struct tm* current = localtime(&now); \

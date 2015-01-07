@@ -1,13 +1,12 @@
 ########################################################################
 #
-# zibaldone - a C++ library for Thread, Timers and other Stuff
+# zibaldone - a C++/Java library for Thread, Timers and other Stuff
 #
 # Copyright (C) 2012  Antonio Buccino
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 2 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation, version 2.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -21,67 +20,68 @@
 
 # compiler section
 SHELL=/bin/bash
-CC = g++
-AR = ar
-DEBUG = -g
 
-#MACHINE = $(shell uname -m)
-#ifeq ($(MACHINE), x86_64)
-#	ARCH_CFLAGS = -fPIC
-#else
-#	ARCH_CFLAGS =
-#endif
-ifeq ($(shell uname -m), x86_64)
-	ARCH_CFLAGS = -fPIC
-else
-	ARCH_CFLAGS =
+TARGET=x86_64 #i386
+CC=g++
+ARCH_CFLAGS=-fPIC
+AR:=ar
+DEBUG:=-g
+ifeq ($(TARGET), i386)
+	CC=g++ -m32
+	ARCH_CFLAGS=
 endif
 
-CFLAGS = -Wall -Werror $(DEBUG) $(ARCH_CFLAGS)
+CFLAGS:=-Wall -Werror $(DEBUG) $(ARCH_CFLAGS)
 
-IFLAGS = -I./Ipc -I./Log -I./SerialPort -I./Thread -I./Timer -I./Tools
+IFLAGS = -I./Events -I./Ipc -I./Log -I./SerialPort -I./Thread -I./Timer -I./Tools
 LFLAGS = -lpthread
 
 # dependencies
-DEPS = ./Ipc/Socket.h \
+DEPS = ./Ipc/TcpIpc.h \
+	   ./Ipc/PfLocalIpc.h \
+	   ./Ipc/UdpIpc.h \
 	   ./Log/Log.h \
 	   ./SerialPort/SerialPort.h \
 	   ./SerialPort/SerialPortHandler.h \
 	   ./Thread/Thread.h \
+	   ./Events/Events.h \
 	   ./Timer/Timer.h \
 	   ./Tools/Tools.h
 
 # objects
-OBJ_NAMES = ./Ipc/Socket \
+OBJ_NAMES = ./Ipc/TcpIpc \
+			./Ipc/PfLocalIpc \
+			./Ipc/UdpIpc \
             ./Log/Log \
 			./SerialPort/SerialPort \
 			./SerialPort/SerialPortHandler \
 			./Thread/Thread \
+			./Events/Events \
 			./Timer/Timer \
 			./Tools/Tools
-OBJ_O = $(foreach OBJ_NAME, $(OBJ_NAMES), $(OBJ_NAME).o)
-OBJ_OS = $(foreach OBJ_NAME, $(OBJ_NAMES), $(OBJ_NAME).os)
+
+OBJ = $(foreach OBJ_NAME, $(OBJ_NAMES), $(OBJ_NAME).o)
 
 # targets
 %.o: %.cpp $(DEPS)
-	@echo "building $@"
 	$(CC) -c -o $@ $< $(CFLAGS) $(IFLAGS)
 
-%.os: %.cpp $(DEPS)
-	@echo "building $@"
-	$(CC) -c -o $@ $< $(CFLAGS) $(IFLAGS)
+zibaldone: zibaldoneDynamic zibaldoneStatic
 
-zibaldone: $(OBJ_O) $(OBJ_OS)
+zibaldoneDynamic: $(OBJ)
 	@echo "building $@"
-	$(AR) rc lib$@.a $(OBJ_O) 
+#	$(CC) -o lib$@.so $(LFLAGS) -shared $(OBJ)
+	$(CC) -o lib$@.so $(LFLAGS) -shared $(OBJ) -lrt
+	mv  lib$@.so ./build/libzibaldone.so
+
+zibaldoneStatic: $(OBJ)
+	@echo "building $@"
+	$(AR) rc lib$@.a $(OBJ) 
 	ranlib lib$@.a
-	mv  lib$@.a ./build
-	@echo "building $@"
-	$(CC) -o lib$@.so $(LFLAGS) -shared $(OBJ_OS)
-	mv  lib$@.so ./build
+	mv  lib$@.a ./build/libzibaldone.a
 
 clean:
-	rm -f $(OBJ_O) $(OBJ_OS) ./build/libzibaldone.so ./build/libzibaldone.a
+	rm -f $(OBJ) ./build/libzibaldone.so ./build/libzibaldone.a
 
 #test:
 #	@echo machine=$(MACHINE) additional flags=$(ARCH_CFLAGS)

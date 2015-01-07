@@ -1,13 +1,12 @@
 /*
  *
- * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * zibaldone - a C++/Java library for Thread, Timers and other Stuff
  *
  * Copyright (C) 2012  Antonio Buccino
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 2 of the License, or
- * (at your option) any later version.
+ * the Free Software Foundation, version 2.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -20,16 +19,14 @@
  */
 
 #include "SerialPortHandler.h"
+#include "Events.h"
 
 namespace Z
 {
 //-------------------------------------------------------------------------------------------
 static void exceptionHandler(SerialPortException& spEx, std::string portName)//metodo statico (scope locale) per evitare codice ripetuto
 {
-    unsigned int ErrorMessageLen = spEx.ErrorMessage().size();
-    unsigned char* buffer = new unsigned char[ErrorMessageLen];
-    for(size_t i=0; i<ErrorMessageLen; i++) buffer[i]=(unsigned char)spEx.ErrorMessage()[i];
-    Event serialPortErrorEvent(SerialPortHandler::getSerialPortErrorEventId(portName), buffer, ErrorMessageLen);
+	zibErr serialPortErrorEvent(SerialPortHandler::getSerialPortErrorLabel(portName), spEx.ErrorMessage());
     serialPortErrorEvent.emitEvent();//l'evento viene emesso in modo che l'utilizzatore della seriale sappia che questa porta non funziona.
 }
 //-------------------------------------------------------------------------------------------
@@ -48,9 +45,9 @@ toggleRts), reader(sp)
     /*
      * autoregistrazione sull'evento di richiesta di scrittura sulla seriale.
      * Chi vuol inviare dati sulla porta seriale "_portName" deve
-     * semplicemente inviare un evento  (Event) con eventId=txDataEventId
+     * semplicemente inviare un evento  (Event) con label=txDataLabel
      */
-    register2Event(getTxDataEventId());
+    register2Label(getTxDataLabel());
 }
 
 void SerialPortHandler::run()
@@ -59,13 +56,13 @@ void SerialPortHandler::run()
         try {
             Event* Ev = pullOut();
             if(Ev){
-                std::string eventId = Ev->eventId();
-                ziblog(LOG::INF, "received event %s", eventId.c_str());
-                if(eventId == StopThreadEventId) exit = true;
-                else if(eventId == getTxDataEventId()){
-                    sp.Write(Ev->buf(), Ev->len());
-                    delete Ev;
-                }
+				ziblog(LOG::INF, "received event with label %s", Ev->label().c_str());
+				if(dynamic_cast<StopThreadEvent *>(Ev)) exit = true;
+				else if(dynamic_cast<RawByteBufferData *>(Ev)) { 
+					RawByteBufferData* txDataEvent = (RawByteBufferData*)Ev;
+					sp.Write(txDataEvent->buf(), txDataEvent->len());
+				} else ziblog(LOG::ERR, "unexpected event");
+				delete Ev;
             }
         } catch(SerialPortException spEx){
             exceptionHandler(spEx, sp.portName);
@@ -95,13 +92,13 @@ void SerialPortHandler::Join()
     } else reader.Stop();
 }
 
-SerialPortHandler::Reader::Reader(SerialPort& sp):sp(sp){}
+SerialPortHandler::Reader::Reader(SerialPort& sp):exit(false), sp(sp){}
 
 void SerialPortHandler::Reader::run()
 {
     std::vector<unsigned char> rxData;
     DWORD eMask;
-    for(;;) {
+    while(!exit) {
         OVERLAPPED ov;
         memset(&ov, 0, sizeof(OVERLAPPED));
         ov.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -127,13 +124,14 @@ void SerialPortHandler::Reader::run()
             }
         }
         CloseHandle(ov.hEvent);
+        if(eMask==0) return;//chiamata la SetCommMask per stoppare la WaitCommEvent
         if(eMask & EV_ERR) ziblog(LOG::ERR, "A line-status error occurred");
         try {
             rxData=sp.Read();
             if(!rxData.empty()){
                 unsigned char* buffer = new unsigned char[rxData.size()];
                 for(size_t i=0; i<rxData.size(); i++)buffer[i]=rxData[i];
-                Event rx(SerialPortHandler::getRxDataEventId(sp.portName), buffer, rxData.size());
+				RawByteBufferData rx(SerialPortHandler::getRxDataLabel(sp.portName), buffer, rxData.size());
                 rx.emitEvent();
                 delete buffer;
             } else ziblog(LOG::ERR, "WaitCommEvent lied to me!");
@@ -145,6 +143,16 @@ void SerialPortHandler::Reader::run()
     }
 }
 
-void SerialPortHandler::Reader::Stop(){kill();}
+void SerialPortHandler::Reader::Start()
+{
+	exit=false;
+	Thread::Start();
+}
+
+void SerialPortHandler::Reader::Stop()
+{
+	exit=true;
+    SetCommMask(sp.fd, 0x0000);
+}
 //-------------------------------------------------------------------------------------------
 }//namespace Z
