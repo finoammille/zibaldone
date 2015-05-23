@@ -346,6 +346,7 @@ void AutonomousThread::Stop()
 {
     WaitForSingleObject(_lock, INFINITE);
     exit=true;
+    Join();
     /*
     26/11/14 metodo kill() eliminato: e` troppo pericoloso e non deve servire mai!
     kill();//non servirebbe. Diventa necessaria solo se viene fornita una singleLoopCycle fatta di un ciclo infinito, In tal caso

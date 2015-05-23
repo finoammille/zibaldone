@@ -329,6 +329,7 @@ void AutonomousThread::Stop()
 {
     pthread_mutex_lock(&_lock);
     exit=true;
+    Join();
     /*
     26/11/14 metodo kill() eliminato: e` troppo pericoloso e non deve servire mai!
     kill();//non servirebbe. Diventa necessaria solo se viene fornita una singleLoopCycle fatta di un ciclo infinito, In tal caso
@@ -393,7 +394,6 @@ void EventManager::mapLabel2Receiver(const std::string& label, Thread *T)
     pthread_mutex_lock(&_rwReq);
     if(!--_pendingWriters) pthread_cond_signal(&_noPendingWriters);
     pthread_mutex_unlock(&_rwReq);
-
     pthread_mutex_unlock(&_lockEvtReceivers);
 }
 

@@ -64,8 +64,8 @@ void PfLocalConnHandler::Start()
 
 void PfLocalConnHandler::Stop()
 {
-    Thread::Stop();
     reader.Stop();
+    Thread::Stop();
 }
 
 void PfLocalConnHandler::Join()
