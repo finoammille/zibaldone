@@ -1,9 +1,10 @@
 ########################################################################
 #
-# zibaldone - a C++/Java library for Thread, Timers and other Stuff
+# zibaldone - a C++ library for Thread, Timers and other Stuff
+# http://sourceforge.net/projects/zibaldone/
 #
-# Copyright (C) 2012  Antonio Buccino
-# 
+# Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, version 2.
@@ -21,19 +22,33 @@
 # compiler section
 SHELL=/bin/bash
 
-TARGET=x86_64 #i386
-CC=g++
-ARCH_CFLAGS=-fPIC
 AR:=ar
 DEBUG:=-g
-ifeq ($(TARGET), i386)
+
+target=
+
+ifeq ($(target), i386)
 	CC=g++ -m32
 	ARCH_CFLAGS=
+else ifeq ($(target), arm)
+	CC=arm-none-linux-gnueabi-g++
+	AR:=arm-none-linux-gnueabi-ar
+	ARCH_CFLAGS=-Darm
+else ifeq ($(target), x86_64)
+	CC=g++ -m64
+	ARCH_CFLAGS=-fPIC
+else
+	CC=g++
+	ifeq ($(shell uname -m), x86_64)
+		ARCH_CFLAGS = -fPIC
+	else
+		ARCH_CFLAGS =
+	endif
 endif
 
 CFLAGS:=-Wall -Werror $(DEBUG) $(ARCH_CFLAGS)
 
-IFLAGS = -I./Events -I./Ipc -I./Log -I./SerialPort -I./Thread -I./Timer -I./Tools
+IFLAGS = -I./Events -I./Ipc -I./Log -I./Utils/SerialPort -I./Thread -I./Timer -I./Utils/Tools
 LFLAGS = -lpthread
 
 # dependencies
@@ -41,24 +56,26 @@ DEPS = ./Ipc/TcpIpc.h \
 	   ./Ipc/PfLocalIpc.h \
 	   ./Ipc/UdpIpc.h \
 	   ./Log/Log.h \
-	   ./SerialPort/SerialPort.h \
-	   ./SerialPort/SerialPortHandler.h \
+	   ./Utils/SerialPort/SerialPort.h \
+	   ./Utils/SerialPort/SerialPortHandler.h \
 	   ./Thread/Thread.h \
 	   ./Events/Events.h \
 	   ./Timer/Timer.h \
-	   ./Tools/Tools.h
+	   ./Utils/Tools/Tools.h \
+	   ./Utils/StopAndWaitOverUdp/StopAndWaitOverUdp.h
 
 # objects
 OBJ_NAMES = ./Ipc/TcpIpc \
 			./Ipc/PfLocalIpc \
 			./Ipc/UdpIpc \
             ./Log/Log \
-			./SerialPort/SerialPort \
-			./SerialPort/SerialPortHandler \
+			./Utils/SerialPort/SerialPort \
+			./Utils/SerialPort/SerialPortHandler \
 			./Thread/Thread \
 			./Events/Events \
 			./Timer/Timer \
-			./Tools/Tools
+			./Utils/Tools/Tools \
+			./Utils/StopAndWaitOverUdp/StopAndWaitOverUdp
 
 OBJ = $(foreach OBJ_NAME, $(OBJ_NAMES), $(OBJ_NAME).o)
 
@@ -76,29 +93,9 @@ zibaldoneDynamic: $(OBJ)
 
 zibaldoneStatic: $(OBJ)
 	@echo "building $@"
-	$(AR) rc lib$@.a $(OBJ) 
+	$(AR) rc lib$@.a $(OBJ)
 	ranlib lib$@.a
 	mv  lib$@.a ./build/libzibaldone.a
 
 clean:
 	rm -f $(OBJ) ./build/libzibaldone.so ./build/libzibaldone.a
-
-#test:
-#	@echo machine=$(MACHINE) additional flags=$(ARCH_CFLAGS)
-
-# url utili:
-# http://www.gnu.org/software/make/manual/make.html#Automatic-Variables
-# http://www.cs.colby.edu/maxwell/courses/tutorials/maketutor/
-# http://makepp.sourceforge.net/1.19/makepp_variables.html#input
-# http://makepp.sourceforge.net/1.19/makepp_cookbook.html#Tips%20for%20multiple%20directories
-# http://www.gnu.org/s/hello/manual/make/Phony-Targets.html
-# http://www.bo.cnr.it/corsi-di-informatica/corsoCstandard/Lezioni/17Linuxmake.html
-# http://cs.acadiau.ca/~jdiamond/comp2103/beginner-tutorials/LinuxTutorialGcc.html
-# http://www.gnu.org/software/make/manual/make.html#toc_Rules
-# http://mrbook.org/tutorials/make/
-# http://www.cs.umd.edu/class/fall2002/cmsc214/Tutorial/makefile.html
-# http://www.opussoftware.com/tutorial/TutMakefile.htm
-# http://www.gnu.org/s/hello/manual/make/Text-Functions.html
-
-# mix java and c++ in same makefile!
-# http://stackoverflow.com/questions/2846708/makefile-to-compile-both-c-and-java-programs-at-the-same-time

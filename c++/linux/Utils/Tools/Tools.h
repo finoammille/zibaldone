@@ -1,9 +1,10 @@
 /*
  *
- * zibaldone - a C++/Java library for Thread, Timers and other Stuff
+ * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * http://sourceforge.net/projects/zibaldone/
  *
- * Copyright (C) 2012  Antonio Buccino
- * 
+ * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, version 2.
@@ -41,6 +42,7 @@ class OsCmd {
     std::string execute(std::string, bool);
 public:
     std::vector<std::string> getSerialPortList();
+    long getFileSizeInBytes(const std::string&);
 };
 //-------------------------------------------------------------------------------------------
 class currentDateTime {
@@ -67,7 +69,7 @@ public:
 
     LIMITS:
 
-    DONT USE IF:
+    DON'T USE IF:
 
     1) the object allocates heap memory
 
@@ -78,43 +80,16 @@ public:
     1) does not handle a "deep serialization" that is the serialization of data pointed by
        a member of the serialized object. A possible pointer will be inserted into the
        serializad byte stream as is, like any other member and after the serialization it
-       have to be ensured there are not dangling reference
+       have to be ensured there are not dangling reference.
+       A safe way to complain the above condition is use serialize/deserialize only with
+       built-in data type and class/structures containing only built-in data types (int,
+       char, ...)
 
     2) object serialization works only for event within a process (that is between threads in
        the same process). the sent of serialization data via socket is not supported because
-       there is no warrant about how the data are used on peer socket side. 
-
--------------------------------------------------------------------------------------------
-
-    SERIALIZATION
-    le funzioni template "serialize" e "deserialize" permettono di serializzare un oggetto 
-    in modo da poterlo inserire facilmente nel payload di un evento.
-
-    LIMITI:
-    
-    NON USARE SE:
-    
-    1) l'oggetto alloca memoria heap
-    
-    2) l'oggetto deve essere trasmesso su un socket.
-    
-    Infatti, per semplificare l'implementazione:
-    
-    1) non viene gestita la "deep serialization" ovvero serializzazione dei dati puntati 
-       da un membro della classe serializzata. Un eventuale puntatore viene inserito nello 
-       stream come un membro qualsiasi e dopo la deserializzazione occorrerebbe garantire 
-       l'assenza di dangling reference.
-    
-    2) ovviamente la serializzazione funziona solo per gli eventi all'interno di un thread. 
-       L'invio attraverso un socket non e` supportato perche` non c'e` garanzia sul tratta-
-       mento dei dati dall'altra parte del socket. Infatti l'allineamento dei dati potrebbe 
-       essere diverso e quindi la deserialization non funzionerebbe correttamente. Teorica-
-       mente sarebbe possibile usare serialization con un socket solo se dall'altra parte 
-       del socket c'e` una macchina identica a quella che trasmette, in modo che la ricostru-
-       zione dell'oggetto sia identica!
+       there is no warrant about how the data are used on peer socket side.
 */
 
-//serialize funziona solo con i dati built in e le strutture/classi contenenti solo dati built in.
 template <class T>
 std::vector<unsigned char> serialize (const T & o)
 {
@@ -132,8 +107,6 @@ T deserialize (const unsigned char* optr)
     return T(*((T*)optr));
 }
 
-//come il precedente ma utilizzabile su un bytestream contenente piu` oggetti contenenti solo tipi builtIn
-//serializzati uno dietro l'altro. modifica il vector ricevuto in ingresso rimuovendo la parte deserializzata
 template <class T>
 T deserialize (std::vector<unsigned char>& v)
 {
@@ -142,18 +115,8 @@ T deserialize (std::vector<unsigned char>& v)
     return ret;
 }
 
-//serializeStdString permette di serializzare una std::string
 std::vector<unsigned char> serializeStdString (const std::string &);
 
-//deserializeStdString e` l'inversa di serializeStdString: ricostruisce una 
-//std::string serializzata precedentemente con serializeStdString. La funzione
-//restituisce quello che resta dell'std::vector in ingresso tolta la stringa
-//estratta (nel caso limite, un std::vector vuoto se questo conteneva solo la stringa)
-//in questo modo e` possibile estrarre da una serializzazione eterogenea la stringa
-//serializzata e continuare la deserializzazione degli altri tipi!
-//In altre parole l'std::vecton in ingresso deve iniziare con una stringa serializzata
-//precedentemente con serializeStdString ma a seguire puo` contenere qualsiasi altro dato
-//serializzato!
 std::string deserializeStdString (std::vector<unsigned char>&);
 //-------------------------------------------------------------------------------------------
 
@@ -161,55 +124,72 @@ std::string deserializeStdString (std::vector<unsigned char>&);
 
 /*
 
-gestisce un file di configurazione avente il formato
+configFileHandler handles a configuration file with the following format
 
 <setting>=<value>
 
-Per esempio:
+for example:
 port.name=/dev/ttyS0
 port.speed=115200
 ...
 
-il nome del parametro e` tutto compreso il "." ma e` utile utilizzare una notazione di questo tipo
-per facilitare la comprensione del file di configurazione organizzandolo in gruppi di dati.
+in the example above, the parameter name includes the "." but configFileHandles considers
+"port.name" and " port.speed" as two different independent parameters.
 
-*/
+Anyway such a notation is useful to ease the comprehension of the configuration file
+parameters grouping them in a structured data organization
 
-
-/*
-Occorre passare al costruttore:
-nome del file di configurazione (stringa con path)
-carattere x comment lines (il default = #)
 */
 
 class configFileHandler {
-    std::string configFile;//file di configurazione
-    std::map <std::string, std::string> configData;//dati di configurazione (mappa key-value)
-    std::vector<char> commentTags;//lista dei caratteri che identificano un commento. 
+    std::string configFile;//configuration file name including path
+    std::map <std::string, std::string> configData;//configuration data (key-value map)
+    std::vector<char> commentTags;//character list that can be indifferently used at the beginning of a line to identify a comment
+    std::vector<std::string> commentHeaderRaws;//comment lines that will be inserted at the beginning of the configuration file.
+                                               //A tipical use is for some explanation about the configuration file parameters and
+                                               //the allowed values for them
 public:
-    //e` possibile passare al costruttore una nuova lista di parametri-valore con cui sovrascrivere quella esistente
-    configFileHandler(std::string configFile, 
+    //it is possible to pass to the constructor a new list parameter-value that will override the existing one
+#ifdef arm
+    //arm compiler does not support default parameters, so we have three distinct overloaded constructors
+    configFileHandler(std::string configFile);
+    configFileHandler(std::string configFile, std::map<std::string, std::string> configData);
+    configFileHandler(std::string configFile, std::map<std::string, std::string> configData,
+                      std::vector<char> commentTags);
+#else
+    configFileHandler(std::string configFile,
                       std::map<std::string, std::string> configData=std::map<std::string, std::string>(),
                       std::vector<char> commentTags=std::vector<char>());
-    void read();//legge i dati di configurazione dal file
-    void write();//scrive i dati di configurazione nel file
-    std::map<std::string, std::string> getConfigData();//restituisce l'intera mappa
-    void addOrUpdateKeyValue(const std::string&, const std::string&);//inserisce nel file di configurazione la coppia (key-value)
-                                                                     //o se e` gia` presente la aggiorna con il nuovo valore.
-    std::string getRawValue(const std::string &);//restituisce il valore "raw" di un parametro cioe` esattamente la corrispondente 
-                                                 //stringa nel file di configurazione. Se il parametro non e` presente, il metodo 
-                                                 //ritorna una stringa vuota.
-    bool getBoolValue(bool& dest, std::string param);//se la key string param e` presente, il parametro input bool dest conterra` 
-                                                     //true o false a seconda se la corrispondente string value e` = a "true" o 
-                                                     //"false" e il metodo ritorna true (success). Se la key string param non e` 
-                                                     //presente nei dati di configurazione oppure se la corrispondente string 
-                                                     //value ha un valore diverso da "true" o "false" il metodo ritorna false 
-                                                     //(fail) e il valore del parametro dest non viene toccato
-    bool getIntValue(int& dest, std::string param);//se la key string param e` presente, il parametro input int dest conterra` la
-                                                   //conversione (atoi) ad int della stringa value corrispondente e il metodo ritorna
-                                                   //true (success). Se la key string param non e` presente nei dati di  configurazione 
-                                                   //oppure se la corrispondente string value ha un valore non  convertibile ad int il 
-                                                   //metodo ritorna false (fail) e il valore  del parametro dest non viene toccato
+#endif
+    void read();//this method reads configuration file data. It creates the file if it does not exist
+    void write();//this method writes configData map in the configuration file. It creates the file if it does not exist
+    std::map<std::string, std::string> getConfigData();//this method returns the whole config data map
+    void addOrUpdateKeyValue(const std::string&, const std::string&);//this method inserts the pair (key-value) into the
+                                                                     //configuration file or updates it, if that pair is
+                                                                     //present  yet
+    void insertCommentHeaderRaw(std::string);//this method insert a new comment line in the configuration file header
+    std::string getRawValue(const std::string &);//this method returns the raw value of a parameter that is exactly the
+                                                 //string in the value field of the corresponding specified key.
+                                                 //If the requested key is not present, it returns an empty string.
+    bool getBoolValue(bool& dest, std::string param);//this method looks for the value corresponding to the key "param".
+                                                     //If value is equal to the literal string "true" then the reference
+                                                     //boolean variable dest is set to true and the method returns true,
+                                                     //indicating the key was found and correctly interpretated.
+                                                     //Similarly, if value is equal to the literal string "false" then the
+                                                     //reference boolean variable dest is set to false and the method
+                                                     //returns true, indicating the key was found and correctly interpretated.
+                                                     //If the key param was not found in the configuration file or if the
+                                                     //value is a literal string other than "true" or "false" then dest is
+                                                     //left as is and the method returns false (fail) to warn there is
+                                                     //something wrong (the parameter key is not present in the configuration
+                                                     //file or the corresponding value is different than "true" or "false")
+    bool getIntValue(int& dest, std::string param);//this method looks for the value corresponding to the key "param". If value
+                                                   //is a string corresponding to an integer value (atoi), then the int reference
+                                                   //variable dest will contain that integer value and the method returns true,
+                                                   //indicating the key was found and correctly interpretated. If the key param
+                                                   //is not present in the configuration file or the relative value cannot be
+                                                   //interpreded as an integer number, then dest is left as is and the method
+                                                   //returns false (fail) to warn there is something wrong
 };
 //-------------------------------------------------------------------------------------------
 }//namespace Z

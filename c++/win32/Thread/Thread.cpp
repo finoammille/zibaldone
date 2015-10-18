@@ -1,8 +1,9 @@
 /*
  *
- * zibaldone - a C++/Java library for Thread, Timers and other Stuff
+ * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * http://sourceforge.net/projects/zibaldone/
  *
- * Copyright (C) 2012  Antonio Buccino
+ * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,7 +27,7 @@
 namespace Z
 {
 //-------------------------------------------------------------------------------------------
-class EvMng {//ha il solo scopo di chiamare il costruttore di EventManager che inizializza i mutex, condition
+class EvMng {
 #if defined(_MSC_VER)
     EventManager _EvMng;
 #else
@@ -41,7 +42,7 @@ Event::Event(const std::string& label):_label(label)
 {
     if(label.empty()) {
         ziblog(LOG::ERR, "ERROR: an instance of Event cannot have empty label");
-        _label = "sob";//assegno un nome per evitare crash.
+        _label = "sob";
     }
 }
 
@@ -51,7 +52,6 @@ Event::~Event(){_label.clear();}
 
 Event & Event::operator = (const Event &ev)
 {
-    //if(this == &ev) return *this; //self assignment check... non serve perche` Event e` astratta e non puo` essere quindi istanziata...
     _label = ev._label;
     return *this;
 }
@@ -63,20 +63,18 @@ void Event::emitEvent()
         return;
     }
     std::deque < Thread * > listeners;
-//TODO - per ora uso WaitForSingleObject che funziona sia con win xp che con win 7,
-//in futuro farò modifica che usa le variabili condition, che rende il codice più
-//efficiente, ma sono utilizzabili solo da win vista in poi....
+//TODO - for now we use WaitForSingleObject that works both with win xp and win 7,
+//but it's better (and we will do so as soon as possible) use the condition variables
+//that is more efficient but it's supported only for win version newer than win vista.
 //#if defined(_WIN32) && (_WIN32_WINNT < 0x0600)
     WaitForSingleObject(EventManager::_rwReq, INFINITE);
-    while(EventManager::_pendingWriters) {//devo usare il while perchè putroppo win non è standard posix e non ho
-										  //una primitiva come la pthread_cond_wait che atomicamente faccia lock
-										  //del mutex sulla notifica di _noPendingWriters...
+    while(EventManager::_pendingWriters) {
 		ReleaseMutex(EventManager::_rwReq);
 		WaitForSingleObject(EventManager::_noPendingWriters, INFINITE);
 		WaitForSingleObject(EventManager::_rwReq, INFINITE);
 	}
 //#else
-//    //TODO!!! usare condition variable, supportate da win vista in poi
+//    //TODO!!! use condition variables, supported from win vista onwards
 //#endif
     EventManager::_pendingReaders++;
     ReleaseMutex(EventManager::_rwReq);
@@ -105,29 +103,18 @@ Thread::Thread()
 Thread::~Thread()
 {
     if(alive()) {
-        //se sono qui e il thread loop e` ancora presente c'e` una violazione delle regole
-        //di utilizzo della classe Thread (il thread loop run deve essere obbligatoriamente
-        //terminato - chiamando Stop o uscendo - prima di distruggere l'oggetto che incapsula
-        //il thread). Emetto un log di errore e provo a fare un recupero disperato....
         ziblog(LOG::ERR, "Thread loop (run method) MUST BE END before destroying a Thread object");
-        Stop();//pthread_kill usata con sig=0 dice se _th è vivo. In tal caso chiamo Stop()
+        Stop();
     }
     StopReceivingAndDiscardReceived();
 }
 
-//NOTA su ThreadLoop: un metodo statico significa che ce n'e` una sola copia! Non che puo' essere chiamato solo in un thread!
-//Quindi ognuno chiama la funzione e all'uscita dalla run() chiamata da ThreadLoop ritrova il SUO arg, ovvero il puntatore al
-//allo stesso oggetto che conteneva quella particolare run())
 DWORD WINAPI Thread::ThreadLoop(LPVOID arg)
 {
     ((Thread *)arg)->run();
     return 0;
 }
 
-//NOTA IMPORTANTE: occorre garantire che il thread sia creato UNA VOLTA SOLA per ogni oggetto di tipo thread istanziato.
-//in caso contrario infatti avrei più thread indipendenti che però condividerebbero gli stessi dati incapsulati nella
-//classe associata al thread. Occorre quindi prevenire che una doppia chiamata a Start sullo stesso oggetto comporti
-//la creazione di due thread (il thread va creato solo LA PRIMA VOLTA che viene chiamato il metodo Start().
 void Thread::Start()
 {
     WaitForSingleObject(_lockSet, INFINITE);
@@ -144,9 +131,8 @@ void Thread::Stop()
     if(_set) {
         Event* stopThread = new StopThreadEvent();
         pushIn(stopThread);
-        Join();//N.B.: attenzione a non fare confusione! non sto facendo "autojoin" la classe incapsula i dati ma il thread gira indipendentemente!
-        _set=false;//serve per permettere di fare nuovamente Start (ovvero ridare vita al thread che si appoggia alla
-                   //classe) permettendo il riutilizzo dell'oggetto che incapsula il thread (se non viene distrutto!)
+        Join();
+        _set=false;
         _th=0;
     }
     ReleaseMutex(_lockSet);
@@ -163,19 +149,19 @@ void Thread::Join()
 
 void Thread::StopReceivingAndDiscardReceived()
 {
-    EventManager::unmapReceiver(this);//rimuovo la registrazione del thread da EventManager
+    EventManager::unmapReceiver(this);
     WaitForSingleObject(_lockQueue, INFINITE);
     std::map < std::string, std::deque < Event* > >::iterator it;
     std::deque < Event* > * evList = NULL;
     for(it = _eventQueue.begin(); it != _eventQueue.end(); it++){
         evList = &(it->second);
         for(size_t i=0; i<evList->size(); i++) {
-            delete (*evList)[i];//chiamo il distruttore per ogni puntatore di ogni evento memorizzato in coda
+            delete (*evList)[i];
             (*evList)[i]=NULL;
         }
-        evList->clear();//ripulisco la coda degli eventi del thread
+        evList->clear();
     }
-    _eventQueue.clear();//ho ripulito gli eventi per ogni tipo, ora ripulisco i tipi (nomi degli eventi)
+    _eventQueue.clear();
     ReleaseMutex(_lockQueue);
 }
 
@@ -197,47 +183,32 @@ void Thread::pushIn(Event* ev)
 
 Event* Thread::pullOut(int maxWaitMsec)
 {
-    WaitForSingleObject(_lockQueue, INFINITE);//accesso esclusivo alla coda...
-    while(_eventQueue.empty()) {//se la coda e' vuota...
+    WaitForSingleObject(_lockQueue, INFINITE);
+    while(_eventQueue.empty()) {
         if(maxWaitMsec == NOWAIT) {
-            ReleaseMutex(_lockQueue);//rilascio l'esclusivita' di accesso sulla coda
-            return NULL;//la coda e` vuota e il chiamante non vuole che si aspetti sulla coda. Restituisco un puntatore a NULL.
-        } else if(maxWaitMsec == WAIT4EVER) {//...resto in attesa sulla variabile condition indefinitamente
+            ReleaseMutex(_lockQueue);
+            return NULL;
+        } else if(maxWaitMsec == WAIT4EVER) {
 			ReleaseMutex(_lockQueue);
 			WaitForSingleObject(_thereIsAnEvent, INFINITE);
 			WaitForSingleObject(_lockQueue, INFINITE);
 		}
-        else {//attesa sulla coda per un tempo finito = maxWaitMsec > 0
+        else {
 			DWORD start, end;
 			ReleaseMutex(_lockQueue);
 			start = GetTickCount();
-            //TODO. la pthread_cond_timedwait non ha un equivalente in windows nelle versioni precedenti a vista (quindi
-            //nemmeno in win xp). Sotto windows le variabili condition sono arrivate solo dopo vista (... no comment ....)
 			if(WaitForSingleObject(_thereIsAnEvent, maxWaitMsec) == WAIT_TIMEOUT) return NULL;
 			WaitForSingleObject(_lockQueue, INFINITE);
 			end = GetTickCount();
-			maxWaitMsec -= (end-start);//aggiorno maxWaitMsec nel caso dovessi ripetere il ciclo di attesa (corsa su _lockQueue e _eventQueue di nuovo empty)
+			maxWaitMsec -= (end-start);
 		}
     }
-    std::deque < Event* > *evQ = &(_eventQueue.find(_chronologicalLabelSequence.back())->second);/* non serve verificare che it !=
-                                                                                                    * _eventQueue.end() perche' c'e'
-                                                                                                    * sicuramente almeno una entry
-                                                                                                    * corrispondente all'evento in coda.
-                                                                                                    * Infatti se sono qui, vuol dire che
-                                                                                                    * e` arrivato un evento (altrimenti
-                                                                                                    * sarei uscito ritornando NULL al
-                                                                                                    * termine dell'attesa sulla condition
-                                                                                                    * variabile "_thereIsAnEvent"
-                                                                                                    */
-    _chronologicalLabelSequence.pop_back();//aggiorno _chronologicalLabelSequence
-    Event* ret =  evQ->back();/* nota: non serve controllare la condizione evQ->empty(), infatti un evento c'e` sicuramente, se no sarei
-                               * uscito per timeout oppure sarei ancoda sulla variabile condizione "_thereIsAnEvent"
-                               */
-    evQ->pop_back();//rimuovo dalla coda l'evento
-    if(evQ->empty()) _eventQueue.erase(ret->label());/* se non ci sono piu' eventi di questo tipo, rimuovo la relativa lista dalla
-                                                        * mappa della coda
-                                                        */
-    ReleaseMutex(_lockQueue);//rilascio l'esclusivita' di accesso sulla coda
+    std::deque < Event* > *evQ = &(_eventQueue.find(_chronologicalLabelSequence.back())->second);
+    _chronologicalLabelSequence.pop_back();
+    Event* ret =  evQ->back();
+    evQ->pop_back();
+    if(evQ->empty()) _eventQueue.erase(ret->label());
+    ReleaseMutex(_lockQueue);
     return ret;
 }
 
@@ -248,14 +219,9 @@ Event* Thread::pullOut(const std::string& label, int maxWaitMsec)
     return pullOut(labels, maxWaitMsec);
 }
 
-Event* Thread::pullOut(std::deque <std::string> labels, int maxWaitMsec)/* se decido di estrarre un evento di un certo tipo, devo anche
-                                                                         * fornire un timeout, per evitare situazioni ambigue (se l'evento
-                                                                         * non c'e', resto in attesa indefinita sinche' non arriva quello
-                                                                         * specifico evento? Di fatto bloccando tutti? E se vieme richiesto
-                                                                         * per errore un evento che non puo' arrivare resto li per sempre?
-                                                                         */
+Event* Thread::pullOut(std::deque <std::string> labels, int maxWaitMsec)
 {
-    labels.push_front(StopThreadLabel);//come spiegato sopra, DEVO sempre e comunque gestire StopThreadLabel
+    labels.push_front(StopThreadLabel);
     if(maxWaitMsec == WAIT4EVER) {
         ziblog(LOG::WRN, "invalid wait forever for a specific bundle of events... set wait to default value of 1 sec to prevent starvation...");
         maxWaitMsec = 1000;
@@ -266,9 +232,7 @@ Event* Thread::pullOut(std::deque <std::string> labels, int maxWaitMsec)/* se de
     WaitForSingleObject(_lockQueue, INFINITE);
     while(timeout>0){
         for(size_t i=0; i<labels.size(); i++) {
-            if((it = _eventQueue.find(labels[i])) != _eventQueue.end()) {/* ho trovato in coda un evento del tipo richiesto... non serve
-                                                                          * nemmeno far partire il timeout!
-                                                                          */
+            if((it = _eventQueue.find(labels[i])) != _eventQueue.end()) {
                 Event* ret = (it->second).back();
                 (it->second).pop_back();
                 if((it->second).empty()) _eventQueue.erase(ret->label());
@@ -290,15 +254,7 @@ Event* Thread::pullOut(std::deque <std::string> labels, int maxWaitMsec)/* se de
 		timeout -= (end-start);
     }
     ReleaseMutex(_lockQueue);
-    return NULL;/* ho ricevuto qualcosa ma tale ricezione e' avvenuta proprio allo scadere di maxWaitTimeout. In tal caso, potrebbe succedere
-                 * che il tempo residuo ts della pthread_cond_timedwait sia talmente esiguo da scadere quando l'esecuzione arriva alla chiamata
-                 * di gettimeofday per cui timeout = true. In tal caso tutto va esattamente come se fosse scaduto il timeout prima della ricezione
-                 * dell'evento atteso, solo che mi trovo fuori da "while (!timeout) anziche', come normalmente accadrebbe in questi casi, dentro
-                 * l'if(pthread_cond_timedwait(&_thereIsAnEvent, &_lockQueue, &ts)). Occorre allora rilasciare il semaforo e ritornare NULL
-                 * esattamente come se l'evento atteso fosse arrivato troppo in ritardo (non e' cosi' in realta', ma e' esattamente come se fosse cosi',
-                 * e questo e' l'unico modo di trattare l'evento mantenendo la coerenza rispetto al chiamante. D'altronde la colpa e' dovuta al tempo
-                 * materiale per eseguire le istruzioni tra la pthread_cond_timedwait e la gettimeofday: e' il "bello" della programmazione real-time!)
-                 */
+    return NULL;
 }
 
 bool Thread::alive()
@@ -308,21 +264,6 @@ bool Thread::alive()
     GetExitCodeThread(_th, &isAlive);
     return isAlive==STILL_ACTIVE;
 }
-
-/* 
-26/11/14 metodo kill() eliminato: e` troppo pericoloso e non deve servire mai!
-void Thread::kill()
-{
-    WaitForSingleObject(_lockSet, INFINITE);
-    if(_set) {
-        if(TerminateThread(_th, 0) == FALSE) ziblog(LOG::ERR, "could not stop thread (error code = %ld)", GetLastError());
-        _set=false;//serve per permettere di fare nuovamente Start (ovvero ridare vita al thread che si appoggia alla
-                   //classe) permettendo il riutilizzo dell'oggetto che incapsula il thread (se non viene distrutto!)
-        _th=0;
-    }
-    ReleaseMutex(_lockSet);
-}
-*/
 
 //-------------------------------------------------------------------------------------------
 //AutonomousThread
@@ -347,16 +288,31 @@ void AutonomousThread::Stop()
     WaitForSingleObject(_lock, INFINITE);
     exit=true;
     Join();
-    /*
-    26/11/14 metodo kill() eliminato: e` troppo pericoloso e non deve servire mai!
-    kill();//non servirebbe. Diventa necessaria solo se viene fornita una singleLoopCycle fatta di un ciclo infinito, In tal caso
-           //anche mettere exit=true non fa terminare il thread che continuerebbe a girare a causa del ciclo infinito. L'unica
-           //soluzione diventa allora la kill, che non crea nessun problema se il thread e` gia` terminato correttamente (ovvero
-           //se e` stata rispettata la regola di fornire la funzione che implementa un singolo ciclo del thread e non il loop
-           //infinito!
-    */
     ReleaseMutex(_lock);
 }
+
+//-------------------------------------------------------------------------------------------
+//SameThreadAddressSpaceEventReceiver
+Event* SameThreadAddressSpaceEventReceiver::pullOut(int maxWaitMsec)
+{
+    return Thread::pullOut(maxWaitMsec);
+}
+
+Event* SameThreadAddressSpaceEventReceiver::pullOut(const std::string& label, int maxWaitMsec)
+{
+    return Thread::pullOut(label, maxWaitMsec);
+}
+
+Event* SameThreadAddressSpaceEventReceiver::pullOut(std::deque <std::string> labels, int maxWaitMsec)
+{
+    return Thread::pullOut(labels, maxWaitMsec);
+}
+
+void SameThreadAddressSpaceEventReceiver::register2Label(const std::string& label)
+{
+    Thread::register2Label(label);
+}
+
 //-------------------------------------------------------------------------------------------
 //EVENT MANAGER
 HANDLE EventManager::_rwReq;
@@ -392,26 +348,23 @@ void EventManager::mapLabel2Receiver(const std::string& label, Thread *T)
     _pendingWriters++;
     ReleaseMutex(_rwReq);
     WaitForSingleObject(_lockEvtReceivers, INFINITE);
-    if(_evtReceivers.find(label) == _evtReceivers.end()){//se il tipo di evento non era ancora stato registrato
+    if(_evtReceivers.find(label) == _evtReceivers.end()){
         std::deque < Thread *> listeners;
         _evtReceivers.insert(std::pair <std::string, std::deque < Thread *> >(label,listeners));
     }
-    std::deque < Thread *>* evtReceiverList = &_evtReceivers[label];/* lista dei tread registrati per ricevere l'evento "label"
-                                                                       * (nel caso non ci fosse stato nessun thread registrato, ora
-                                                                       * c'e una lista vuota)
-                                                                       */
+    std::deque < Thread *>* evtReceiverList = &_evtReceivers[label];
 
     std::deque < Thread *>::iterator itEvtReceiverList;
     for(itEvtReceiverList = evtReceiverList->begin(); itEvtReceiverList != evtReceiverList->end(); itEvtReceiverList++) {
-        if(*itEvtReceiverList == T) {//qualcuno sta facendo per errore una doppia registrazione su uno stesso evento
+        if(*itEvtReceiverList == T) {
             WaitForSingleObject(_rwReq, INFINITE);
             if(!--_pendingWriters) SetEvent(_noPendingWriters);
             ReleaseMutex(_rwReq);
             ReleaseMutex(_lockEvtReceivers);
             return;
         }
-    }//se sono qui, il ricevitore non e' ancora registrato. Lo registro e rilascio il semaforo.
-    _evtReceivers[label].push_front(T);//registro un nuovo gestore per questo tipo di evento
+    }
+    _evtReceivers[label].push_front(T);
 	WaitForSingleObject(_rwReq, INFINITE);
     if(!--_pendingWriters) SetEvent(_noPendingWriters);
     ReleaseMutex(_rwReq);
@@ -442,24 +395,5 @@ void EventManager::unmapReceiver(Thread *T)
     ReleaseMutex(_rwReq);
     ReleaseMutex(_lockEvtReceivers);
 }
-
-//EventManager::~EventManager(){_evtReceivers.clear();}
-/*
-NOTA IMPORTANTE! Il costruttore di EventManager serve ad inizializzare i mutex, condition, ...
-e viene invocato tramite l'oggetto "fake" _evMng. Quando il programma esce, vengono distrutte
-tutte le variabili static, tra cui i membri di EventManager e in particolare _evtReceivers.
-Se tutto viene fatto correttamente (ovvero i vari thread sono stoppati correttamente e non
-ci sono memory leak riguardanti puntatori a thread) la _evtReceivers viene ripulita da
-unmapReceiver per ogni thread. Se pero` dovesse succedere di dimenticarsi di fare delete di
-un thread allocato in heap, non verrebbe chiamata la relativa unmapReceiver con il risultato
-che all'uscita dal programma si ha una doppia free! In definitiva il distruttore di EventManager
-e` sovrabbondante (all'uscita dal programma come detto le variabili statiche vengono distrutte)
-e può provocare crash in caso di leak riguardante il puntatore ad un thread. Poichè la cosa
-riguarda l'uscita dal programma, i leak eventuali vengono comunque "risolti" dal sistema
-operativo che libera tutta la memoria associata al processo, per cui in definitiva
-conviene non avere il distruttire di EventManager che può provocare un crash in uscita.
-Ho lasciato comunque il distruttore commentato perche` puo` essere utile scommentarlo
-ogni tanto per verificare se ci sono puntatori a thread non deallocati!
-*/
 //-------------------------------------------------------------------------------------------
 }//namespace Z

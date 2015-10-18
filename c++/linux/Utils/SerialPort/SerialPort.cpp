@@ -1,9 +1,10 @@
 /*
  *
- * zibaldone - a C++/Java library for Thread, Timers and other Stuff
+ * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * http://sourceforge.net/projects/zibaldone/
  *
- * Copyright (C) 2012  Antonio Buccino
- * 
+ * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, version 2.
@@ -20,7 +21,7 @@
 
 #include "SerialPort.h"
 
-namespace Z 
+namespace Z
 {
 //-------------------------------------------------------------------------------------------
 bool SerialPort::Open(const std::string& portName)
@@ -98,7 +99,7 @@ void SerialPort::SetBaudRate(int rate)
         case 115200: rate = B115200; break;
         default: ziblog(LOG::ERR, "SetBaudRate = %d failed", rate);
     }
-    //adds new settings
+    //add new settings
     _serialPortSettings.c_cflag &= ~(CBAUD | CBAUDEX);
     _serialPortSettings.c_cflag |= rate;
     cfsetispeed(&_serialPortSettings, rate);
@@ -112,8 +113,10 @@ void SerialPort::SetParity(SerialPort::Parity parity)
     switch(parity) {
         case SerialPort::ParityNone:
             _serialPortSettings.c_cflag &= ~PARENB;//disable parity generation and check
-            _serialPortSettings.c_cflag &= ~PARODD;//reset degli altri flag della parita'
-            _serialPortSettings.c_cflag &= ~CMSPAR;//reset degli altri flag della parita'
+            _serialPortSettings.c_cflag &= ~PARODD;//reset of other parity flags
+#ifdef CMSPAR //arm board
+            _serialPortSettings.c_cflag &= ~CMSPAR;//reset of other parity flags
+#endif
             _serialPortSettings.c_iflag &= ~(INPCK);//disable input parity checking
             break;
         case SerialPort::ParityEven:
@@ -131,13 +134,17 @@ void SerialPort::SetParity(SerialPort::Parity parity)
             _serialPortSettings.c_iflag &= ~(PARMRK);//and don't mark them either
             break;
         case SerialPort::ParityMark:
+#ifdef CMSPAR //arm board
             _serialPortSettings.c_cflag |= (PARENB | CMSPAR);
+#endif
             _serialPortSettings.c_iflag |= INPCK;
             _serialPortSettings.c_iflag &= ~(IGNPAR);//don't ignore parity errors
             _serialPortSettings.c_iflag &= ~(PARMRK);//and don't mark them either
             break;
         case SerialPort::ParitySpace:
+#ifdef CMSPAR //arm board
             _serialPortSettings.c_cflag |= (PARENB | CMSPAR | CMSPAR);
+#endif
             _serialPortSettings.c_iflag |= INPCK;
             _serialPortSettings.c_iflag &= ~(IGNPAR);//don't ignore parity errors
             _serialPortSettings.c_iflag &= ~(PARMRK);//and don't mark them either
@@ -152,10 +159,10 @@ void SerialPort::SetDataBits(int dataBits)
         case 5:
             _serialPortSettings.c_cflag = (_serialPortSettings.c_cflag & ~CSIZE) | CS5;
             break;
-        case 6: 
+        case 6:
             _serialPortSettings.c_cflag = (_serialPortSettings.c_cflag & ~CSIZE) | CS6;
             break;
-        case 7: 
+        case 7:
             _serialPortSettings.c_cflag = (_serialPortSettings.c_cflag & ~CSIZE) | CS7;
             _serialPortSettings.c_iflag |= ISTRIP;
             break;
@@ -177,7 +184,7 @@ void SerialPort::SetStopBits(int stopBits)
 void SerialPort::SetLocal(bool isLocal)
 {
     if(isLocal) {
-        _serialPortSettings.c_cflag |= CLOCAL;//indica che non bisogna controllare le line (come il carrier detect) del modem.
+        _serialPortSettings.c_cflag |= CLOCAL;
         _serialPortSettings.c_cflag &= ~HUPCL;
     } else {
         _serialPortSettings.c_cflag &= ~CLOCAL;
@@ -253,7 +260,7 @@ SerialPort::SerialPort(
     SetRaw(true, 0, 10);
     tcflush(fd, TCIFLUSH);
     tcsetattr(fd,TCSANOW,&_serialPortSettings);
-    usleep(10000);//10 msec per dare tempo alla seriale. In genere non serve, ma incerti casi (x es. seriali ftdi su hub usb) e` necessario
+    usleep(10000);//10 msec sleep. Normally not necessary, but sometimes we might need this (i.e. for ftdi serial port on a usb hub)
 }
 
 SerialPort::~SerialPort(){close(fd);}

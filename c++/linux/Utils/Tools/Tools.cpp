@@ -1,8 +1,9 @@
 /*
  *
- * zibaldone - a C++/Java library for Thread, Timers and other Stuff
+ * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * http://sourceforge.net/projects/zibaldone/
  *
- * Copyright (C) 2012  Antonio Buccino
+ * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,14 +25,12 @@
 namespace Z
 {
 //-------------------------------------------------------------------------------------------
-//NOTA: alcuni comandi non ricevono una risposta dall'OS (per esempio
-//quando lancio un programma esterno in background con "&"). In questi
-//casi se lascio wait4answ a true (com'e' di default) la fgets rimane
-//bloccata in attesa di dati sullo stream ma i dati non arriveranno mai!
-//In questi casi e` necessario impostare wait4answ a false.
+//NOTE: some commands do not receive an explicit answer from OS (for example a command
+//followed by "&"). In those cases, we have to set the wait4answ flag to false (by default
+//it's set to true) to avoid a hang waiting for a never coming answer.
 std::string OsCmd::execute(std::string cmd, bool wait4answ=true)
 {
-    char buffer[3072];//3k buffer... dovrebbe bastare!
+    char buffer[3072];//3k buffer... should be enough!
     std::string out;
     if(cmd[cmd.length()-1]!='\n') cmd+='\n';
     sysOut = popen(cmd.c_str(), "r");
@@ -41,9 +40,7 @@ std::string OsCmd::execute(std::string cmd, bool wait4answ=true)
     }
     if(wait4answ) while(fgets(buffer, sizeof(buffer), sysOut)) out +=buffer;
     pclose(sysOut);
-    return (wait4answ ? out.substr (0,out.length()-1) : out);//elimino l'ultimo "\n" in caso di wait4answ altrimenti
-                                                             //ritorno la stringa vuota (che al chiamante non serve,
-                                                             //dato che ha deciso di non leggere la risposta)
+    return (wait4answ ? out.substr (0,out.length()-1) : out);
 }
 //-------------------------------------------------------------------------------------------
 std::vector<std::string> OsCmd::getSerialPortList()
@@ -53,17 +50,24 @@ std::vector<std::string> OsCmd::getSerialPortList()
     //TODO
 
     /*
-    std::string tmp = execute("ls /dev/ttyS* 2>/dev/null");//lista delle porte seriali
+    std::string tmp = execute("ls /dev/ttyS* 2>/dev/null");//serial port list
     std::stringstream lsdevttysxResult(tmp);
     while(lsdevttysxResult >> tmp) result.push_back(tmp);
-    tmp = execute("ls /dev/ttyUSB* 2>/dev/null");//lista delle porte seriali USB ftdi
+    tmp = execute("ls /dev/ttyUSB* 2>/dev/null");//USB ftdi serial port list
     std::stringstream lsdevttyusbxResult(tmp);
     while(lsdevttyusbxResult >> tmp) result.push_back(tmp);
-    tmp = execute("ls /dev/ttyACM* 2>/dev/null");//lista delle porte seriali USB cdc_acm
+    tmp = execute("ls /dev/ttyACM* 2>/dev/null");//USB cdc_acm serial port list
     std::stringstream lsdevttyacmxResult(tmp);
     while(lsdevttyacmxResult >> tmp) result.push_back(tmp);
     */
     return result;
+}
+//-------------------------------------------------------------------------------------------
+long OsCmd::getFileSizeInBytes(const std::string& fileName)
+{
+    std::string cmd = "stat -c %s "+fileName;
+    std::string result = execute(cmd);
+    return std::strtol(result.c_str(), NULL, 10);
 }
 //-------------------------------------------------------------------------------------------
 currentDateTime::currentDateTime()
@@ -81,9 +85,6 @@ currentDateTime::currentDateTime()
 //-------------------------------------------------------------------------------------------
 std::vector<unsigned char> serializeStdString (const std::string& o)
 {
-    //la lunghezza della stringa messa all'inizio serve per poter concatenare diversi dati
-    //serializzati (altrimenti non saprei dove finisce la serializzazione della stringa e
-    //dove inizia quella di un'altro dato!
     std::vector<unsigned char> sStdS;
     std::vector<unsigned char> sStdSLen = serialize((int)(o.size()));
     std::copy(sStdSLen.begin(), sStdSLen.end(), std::back_inserter(sStdS));
@@ -102,6 +103,35 @@ std::string deserializeStdString (std::vector<unsigned char> & s)
 //-------------------------------------------------------------------------------------------
 // CONFIGURATION FILE FACILITIES
 
+#ifdef arm
+    //arm compiler does not support default parameters...
+configFileHandler::configFileHandler(std::string configFile):configFile(configFile)
+{
+    if(configFile.empty()){
+        ziblog(LOG::ERR, "invalid file name");
+        return;
+    }
+    if(commentTags.empty()) {//by default, unless otherwise specified, all lines starting with " #" or " ; " are comments
+        this->commentTags.push_back('#');
+        this->commentTags.push_back(';');
+    }
+}
+
+configFileHandler::configFileHandler(std::string configFile,
+                                     std::map<std::string, std::string> configData):configFile(configFile),
+                                                                                    configData(configData)
+{
+    if(configFile.empty()){
+        ziblog(LOG::ERR, "invalid file name");
+        return;
+    }
+    if(commentTags.empty()) {//by default, unless otherwise specified, all lines starting with " #" or " ; " are comments
+        this->commentTags.push_back('#');
+        this->commentTags.push_back(';');
+    }
+}
+#endif
+
 configFileHandler::configFileHandler(std::string configFile,
                                      std::map<std::string, std::string> configData,
                                      std::vector<char> commentTags) :configFile(configFile),
@@ -112,7 +142,7 @@ configFileHandler::configFileHandler(std::string configFile,
         ziblog(LOG::ERR, "invalid file name");
         return;
     }
-    if(commentTags.empty()) {//se non specificato diversamente, di default sono commenti le linee che iniziano con "#" o con ";"
+    if(commentTags.empty()) {//by default, unless otherwise specified, all lines starting with " #" or " ; " are comments
         this->commentTags.push_back('#');
         this->commentTags.push_back(';');
     }
@@ -122,24 +152,24 @@ void configFileHandler::read()
 {
     std::ifstream cf(configFile.c_str());
     if(!cf) {
-        ziblog(LOG::ERR, "configuration file not found!");
+        ziblog(LOG::ERR, "configuration file could not be opened (%s)", strerror(errno));
         return;
     }
     std::string s, key, value;
     while (std::getline(cf, s)) {
         std::string::size_type begin=s.find_first_not_of(" \f\t\v");
-        if(begin==std::string::npos) continue;//salto le linee vuote
-        if(std::string(commentTags.begin(), commentTags.end()).find(s[begin])!=std::string::npos) continue;//salto i commenti
-        //estrazione del nome del parametro (key)
+        if(begin==std::string::npos) continue;//skip of empty lines
+        if(std::string(commentTags.begin(), commentTags.end()).find(s[begin])!=std::string::npos) continue;//skip of comments
+        //parameter name extraction (key)
         std::string::size_type end=s.find('=', begin);
         key=s.substr(begin, end-begin);
-        key.erase(key.find_last_not_of(" \f\t\v")+1);//elimino gli eventuali spazi iniziali e finali
-        if(key.empty()) continue;//scarto eventuali valori vuoti (parametro nel file ma nessun valore)
-        //estrazione del valore corrispondente (value)
+        key.erase(key.find_last_not_of(" \f\t\v")+1);//deletion of any leading and trailing spaces
+        if(key.empty()) continue;//ignore of any empty key value
+        //parameter value extraction
         begin=s.find_first_not_of(" \f\n\r\t\v", end+1);
         end=s.find_last_not_of(" \f\n\r\t\v")+1;
         value=s.substr(begin, end-begin);
-        //inserisco la coppia (key, value) nella mappa
+        //insertion of the (key, value) pair into the map
         configData[key]=value;
     }
 }
@@ -148,9 +178,10 @@ void configFileHandler::write()
 {
     std::ofstream cf(configFile.c_str(), std::fstream::trunc);
     if(!cf) {
-        ziblog(LOG::ERR, "configuration file not found!");
+        ziblog(LOG::ERR, "configuration file could not be opened (%s)", strerror(errno));
         return;
     }
+    for(size_t i=0; i<commentHeaderRaws.size(); i++) cf<<commentHeaderRaws[i]<<std::endl;
     std::map <std::string, std::string>::const_iterator iter;
     for (iter = configData.begin(); iter != configData.end(); iter++) cf<<iter->first<<" = "<<iter->second<<std::endl;
 }
@@ -164,9 +195,20 @@ std::string configFileHandler::getRawValue(const std::string & parameter)
     return key;
 }
 
+void configFileHandler::insertCommentHeaderRaw(std::string commentRaw)
+{
+    std::string::size_type begin=commentRaw.find_first_not_of(" \f\t\v");
+    if(std::string(commentTags.begin(), commentTags.end()).find(commentRaw[begin])==std::string::npos) {
+        std::string commentTag(1, commentTags.front());
+        commentRaw = commentTag + " " + commentRaw;
+    }
+    commentHeaderRaws.push_back(commentRaw);
+}
+
+
 void configFileHandler::addOrUpdateKeyValue(const std::string& parameter, const std::string& value)
 {
-    configData[parameter]=value;//aggiorno il parametro esistente o se non c'e` creo una entry nuova
+    configData[parameter]=value;//update of existing parameter, if any, or creation of new entry
 }
 
 bool configFileHandler::getBoolValue(bool& dest, std::string param)

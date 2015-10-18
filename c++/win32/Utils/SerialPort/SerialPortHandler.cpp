@@ -1,8 +1,9 @@
 /*
  *
- * zibaldone - a C++/Java library for Thread, Timers and other Stuff
+ * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * http://sourceforge.net/projects/zibaldone/
  *
- * Copyright (C) 2012  Antonio Buccino
+ * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,10 +25,10 @@
 namespace Z
 {
 //-------------------------------------------------------------------------------------------
-static void exceptionHandler(SerialPortException& spEx, std::string portName)//metodo statico (scope locale) per evitare codice ripetuto
+static void exceptionHandler(SerialPortException& spEx, std::string portName)
 {
 	zibErr serialPortErrorEvent(SerialPortHandler::getSerialPortErrorLabel(portName), spEx.ErrorMessage());
-    serialPortErrorEvent.emitEvent();//l'evento viene emesso in modo che l'utilizzatore della seriale sappia che questa porta non funziona.
+    serialPortErrorEvent.emitEvent();
 }
 //-------------------------------------------------------------------------------------------
 SerialPortHandler::SerialPortHandler(const std::string& portName,
@@ -42,11 +43,6 @@ sp(portName, baudRate, parity, dataBits, stopBits, flwctrl, toggleDtr,
 toggleRts), reader(sp)
 {
     exit = false;
-    /*
-     * autoregistrazione sull'evento di richiesta di scrittura sulla seriale.
-     * Chi vuol inviare dati sulla porta seriale "_portName" deve
-     * semplicemente inviare un evento  (Event) con label=txDataLabel
-     */
     register2Label(getTxDataLabel());
 }
 
@@ -58,7 +54,7 @@ void SerialPortHandler::run()
             if(Ev){
 				ziblog(LOG::INF, "received event with label %s", Ev->label().c_str());
 				if(dynamic_cast<StopThreadEvent *>(Ev)) exit = true;
-				else if(dynamic_cast<RawByteBufferData *>(Ev)) { 
+				else if(dynamic_cast<RawByteBufferData *>(Ev)) {
 					RawByteBufferData* txDataEvent = (RawByteBufferData*)Ev;
 					sp.Write(txDataEvent->buf(), txDataEvent->len());
 				} else ziblog(LOG::ERR, "unexpected event");
@@ -66,8 +62,7 @@ void SerialPortHandler::run()
             }
         } catch(SerialPortException spEx){
             exceptionHandler(spEx, sp.portName);
-            exit = true;//devo comunque uscire per evitare di continuare a emettere lo stesso
-                        //errore ripetutamente (la seriale non funziona! E' scollegata o e' rotta!)
+            exit = true;
         }
     }
 }
@@ -107,8 +102,7 @@ void SerialPortHandler::Reader::run()
             if(err == ERROR_IO_PENDING) {
                 DWORD ret=WaitForSingleObject(ov.hEvent, INFINITE);
                 if(ret==WAIT_OBJECT_0) {
-                    DWORD dummy;//fonte msdn: nella GetOverlappedResult chiamata per una WaitCommEvent
-                                //lpNumberOfBytesTransferred e` un parametro obbligatorio ma "undefined"...
+                    DWORD dummy;
                     if(!GetOverlappedResult(sp.fd, &ov, &dummy, TRUE)) {
                         ziblog(LOG::ERR, "GetOverlappedResult error (%ld)", GetLastError());
                         throw SerialPortException("READ ERROR");
@@ -124,7 +118,7 @@ void SerialPortHandler::Reader::run()
             }
         }
         CloseHandle(ov.hEvent);
-        if(eMask==0) return;//chiamata la SetCommMask per stoppare la WaitCommEvent
+        if(eMask==0) return;
         if(eMask & EV_ERR) ziblog(LOG::ERR, "A line-status error occurred");
         try {
             rxData=sp.Read();
@@ -137,8 +131,7 @@ void SerialPortHandler::Reader::run()
             } else ziblog(LOG::ERR, "WaitCommEvent lied to me!");
         } catch (SerialPortException spEx){
             exceptionHandler(spEx, sp.portName);
-            return;//devo comunque uscire per evitare di continuare a emettere lo stesso
-                   //errore ripetutamente (la seriale non funziona! E' scollegata o e' rotta!)
+            return;
         }
     }
 }
