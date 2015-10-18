@@ -1,8 +1,9 @@
 /*
  *
- * zibaldone - a C++/Java library for Thread, Timers and other Stuff
+ * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * http://sourceforge.net/projects/zibaldone/
  *
- * Copyright (C) 2012  Antonio Buccino
+ * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -69,7 +70,7 @@ Udp::Udp(int port):udpPort(port)
     reader._sockId=_sockId;
     reader._addr=_addr;
     reader.exit=false;
-    register2Label(getTxDataLabel());//autoregistrazione sugli eventi di richiesta di trasmissione inviatigli dagli utilizzatori
+    register2Label(getTxDataLabel());//self-registration to transmission request event emitted by class-users
 }
 
 Udp::~Udp()
@@ -129,8 +130,8 @@ void Udp::Reader::run()
 {
     std::stringstream sap;
     sap<<_sockId;
-    std::string rxDataLabel = "dgramRxDataEvent"+sap.str();//REM!! deve essere = a quella ritornata da Udp::getRxDataLabel()
-    const int maxSize = 1024;//1 kb max payload a pacchetto...
+    std::string rxDataLabel = "dgramRxDataEvent"+sap.str();//REM!! it must = Udp::getRxDataLabel()
+    const int maxSize = 1024;//we choose to set 1 kb max each datagram ... if not enough u can modify this....
     unsigned char rxbyte[maxSize];
     fd_set rdfs;//file descriptor set
 	TIMEVAL tv={0};
@@ -144,7 +145,7 @@ void Udp::Reader::run()
 		if(ret) {
 			if(ret==SOCKET_ERROR) ziblog(LOG::ERR, "select error (%d)", WSAGetLastError());
 			else {
-				if(FD_ISSET(_sockId, &rdfs)) {//dati presenti sul socket
+				if(FD_ISSET(_sockId, &rdfs)) {//available data on socket
 					int len = 0;
 					socklen_t address_len = sizeof(_addr);
 					if((len = recvfrom(_sockId, (char*)rxbyte, maxSize, 0, (sockaddr*)&_addr, &address_len)) > 0) {
@@ -153,9 +154,9 @@ void Udp::Reader::run()
 						UdpPkt rx(rxDataLabel, senderUdpPort, senderIpAddr, rxbyte, len);
 						rx.emitEvent();
 					}
-				} /* nota: la select ritorna se c'e` qualcosa sul socket, e nel caso setta _sockId in rdfs, oppure 
-				   * per timeout (nel nostro caso impostato ad 1 secondo). Quindi se viene chiamato il metodo Stop() 
-				   * questo imposta exit=true che permette l'uscita pulita dal thread.
+				} /* note: select returns if there are available data on socket and in that case sets _sockId in rdfs,
+				   * or because of timeout (in our case set to 1 sec). Therefore if the Stop() method has been called
+                   * then exit=true that allows a fair thread exit
 				   */
 			}
 		}

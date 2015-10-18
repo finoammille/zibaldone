@@ -1,9 +1,10 @@
 /*
  *
- * zibaldone - a C++/Java library for Thread, Timers and other Stuff
+ * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * http://sourceforge.net/projects/zibaldone/
  *
- * Copyright (C) 2012  Antonio Buccino
- * 
+ * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, version 2.
@@ -30,7 +31,7 @@
 
 #include "Log.h"
 
-namespace Z 
+namespace Z
 {
 //-------------------------------------------------------------------------------------------
 class SerialPort
@@ -44,9 +45,7 @@ public:
 private:
     struct termios _serialPortSettings;
     bool Open(const std::string&);
-    void SetBaudRate(int);//NOTA: tutti i metodi che modificano i parametri della seriale (SetBaudRate, SetFlowControl, ...) ovviamente
-                          //possono essere usati solamente dopo la open. Non metto controlli in tal senso perche' tali metodi sono privati
-                          //all'interno di SerialPort, e li uso solo io (che so come usarli!)
+    void SetBaudRate(int);
     void SetFlowControl(FlowControl);
     void SetDataBits(int);
     void SetStopBits(int);

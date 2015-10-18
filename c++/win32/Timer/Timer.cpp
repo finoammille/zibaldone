@@ -1,9 +1,10 @@
 /*
  *
- * zibaldone - a C++/Java library for Thread, Timers and other Stuff
+ * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * http://sourceforge.net/projects/zibaldone/
  *
- * Copyright (C) 2012  Antonio Buccino
- * 
+ * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, version 2.
@@ -45,7 +46,7 @@ void Timer::Start(int mSec)
 {
     if(mSec!=-1) _duration = mSec;
     if(!_duration) {
-        ziblog(LOG::WRN, "timer %s has non valid duration value", timerId.c_str());//se sono qui, nè il costruttore ne il chiamante di Start hanno assegnato un valore utile a _duration
+        ziblog(LOG::WRN, "timer %s has non valid duration value", timerId.c_str());
         return;
     }
     WaitForSingleObject(_lock, INFINITE);

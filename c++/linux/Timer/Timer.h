@@ -1,9 +1,10 @@
 /*
  *
- * zibaldone - a C++/Java library for Thread, Timers and other Stuff
+ * zibaldone - a C++ library for Thread, Timers and other Stuff
  *
- * Copyright (C) 2012  Antonio Buccino
- * 
+ * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
+ * http://sourceforge.net/projects/zibaldone/
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, version 2.
@@ -29,10 +30,12 @@
 namespace Z
 {
 //-------------------------------------------------------------------------------------------
-//NOTA: la classe Timer implementa sostanzialmente una "sveglia". L'utilizzatore, istanzia un oggetto Timer, al quale
-//assegna un nome, Alla scadenza del timer, viene emesso un evento avente il nome assegnato alla sveglia.
-//Le regole sono le solite: chi vuol ricevere l'evento deve registrarsi sull'Id (nome) dell'evento
-class Timer { 
+/*
+NOTE: the class Timer implements an "alarm clock". The end user instantiate a Timer object
+      and gives it a name. When the timer expires it's emitted an event with label equal
+      to the name assigned to it.
+*/
+class Timer {
     timer_t _tId;
     const std::string timerId;
     int _duration;
@@ -43,7 +46,9 @@ public:
     std::string getTimerId() const {return timerId;}
     Timer(const std::string& timerId, int duration=-1);
     ~Timer();
-    void Start(int mSec=-1);//Nota: il valore di default (-1) indica che il timer va armato con la durata già specificata nella variabile _duration
+    void Start(int mSec=-1);// the default mSec value (-1) indicates the timer keeps the previously
+                            // assigned duration (variable _duration). So a call to Start() without
+                            // parameters rearms the Timer with previous duration.
     void Stop();
 };
 //-------------------------------------------------------------------------------------------

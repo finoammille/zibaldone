@@ -1,8 +1,9 @@
 /*
  *
- * zibaldone - a C++/Java library for Thread, Timers and other Stuff
+ * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * http://sourceforge.net/projects/zibaldone/
  *
- * Copyright (C) 2012  Antonio Buccino
+ * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -86,10 +87,6 @@ void SerialPort::SetStopBits(int stopBits)
 
 void SerialPort::SetFlowControl(SerialPort::FlowControl flwctrl)
 {
-    //NOTA: toggleDtr e toggleRts sono state inserite per gestire correttamente  le seriali
-    //FTDI con linux. Per windows la soluzione migliore e` ignorare settaggi diversi da
-    //quelli comunemente utilizzati che sono DTR_CONTROL_ENABLE e RTS_CONTROL_HANDSHAKE.
-    //Nel caso servisse (dubito) aumentero` la "granularita`" dei settaggi anche in windows.
     serialPortSettings.fBinary = TRUE;
     serialPortSettings.fOutxCtsFlow = FALSE;
     serialPortSettings.fOutxDsrFlow = FALSE;
@@ -142,7 +139,7 @@ SerialPort::SerialPort(
     SetStopBits(stopBits);
     SetFlowControl(flwctrl);
 	if(!SetCommState(fd, &serialPortSettings)) throw SerialPortException("GET CURRENT SETTINGS ERROR");
-    Sleep(100);//100 msec per dare tempo alla seriale (... 10 volte il tempo che serve a linux ...)
+    Sleep(100);
     if(!SetCommMask(fd, EV_ERR | EV_RXCHAR)) throw SerialPortException("SET COMM MASK ERROR");
 }
 
@@ -159,18 +156,18 @@ std::vector<unsigned char> SerialPort::Read()
 		if(!ReadFile(fd, &rxByte, 1, &readBytes, &ov)) {
             synchronousOperation=false;
 			if(GetLastError()==ERROR_IO_PENDING) {
-				DWORD wRet=WaitForSingleObject(ov.hEvent, 50);//gestisco burst di byte a quanti di durata max = 50 msec.
+				DWORD wRet=WaitForSingleObject(ov.hEvent, 50);
                 if (wRet == WAIT_TIMEOUT) {
                     if(!buffer.empty()) {
                         CancelIo(fd);
-                        break;//burst finito.
+                        break;
                     }
                 } else if(wRet==WAIT_OBJECT_0) {
                     if(!GetOverlappedResult(fd, &ov, &readBytes, TRUE)) {
                         ziblog(LOG::ERR, "GetOverlappedResult error (%ld)", GetLastError());
                         throw SerialPortException("READ ERROR");
                     }
-                } else {//WAIT_ABANDONED oppure WAIT_FAILED
+                } else {//WAIT_ABANDONED or WAIT_FAILED
                     ziblog(LOG::ERR, "WaitForSingleObject error (%ld)", GetLastError());
                     throw SerialPortException("READ ERROR");
                 }
@@ -179,13 +176,7 @@ std::vector<unsigned char> SerialPort::Read()
 				throw SerialPortException("READ ERROR");
 			}
 		}
-        if(synchronousOperation && !readBytes) break;//controllo se siamo in un'operazione sincrona perchè esiste la (remota) possibilità che
-                                                     //che i 50 msec di timeout scadano prima della signal su ov.hEvent (IO ancora pending).
-                                                     //In questo scenario, se il buffer è ancora vuoto (primo byte del burst) readBytes e`
-                                                     //correttamente = 0, ma essendo il buffer ancora vuoto, la cancelIo non viene chiamata e
-                                                     //uscirei (tra l'altro con una imminente signal su ov.hEvent) restituendo un buffer vuoto
-                                                     //a fronte di una precedente segnalazione della WaitCommEvents (con conseguente emissione
-                                                     //del warning "WaitCommEvent lied to me!"
+        if(synchronousOperation && !readBytes) break;
 		buffer.push_back(rxByte);
     }
     CloseHandle(ov.hEvent);
