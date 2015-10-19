@@ -72,6 +72,15 @@ struct sawUdpPktError : public Event {
 protected:
     Event* clone() const {return new sawUdpPktError(*this);}
 };
+//------------------------------------------------------------------------------
+// event for internal use for self-notifying of return in idle state
+// MUST NOT BE USED EXTERNALLY!
+struct idleAndReady : public Event {
+    idleAndReady():Event("idleAndReady")  {}
+    static std::string idleAndReadyLabel(){return "idleAndReady";}
+protected:
+    Event* clone() const {return new idleAndReady(*this);}
+};
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //STATE
 //------------------------------------------------------------------------------
@@ -104,6 +113,8 @@ public:
 class StopAndWaitOverUdpIdleState : public StopAndWaitOverUdpState {
     virtual StopAndWaitOverUdpState* messageInTxQueueHndl(StopAndWaitOverUdpStateContext*);
     virtual StopAndWaitOverUdpState* dgramRxDataEventHndl(StopAndWaitOverUdpStateContext*, const UdpPkt* const);
+public:
+    StopAndWaitOverUdpIdleState(){(idleAndReady()).emitEvent();}
 };
 //------------------------------------------------------------------------------
 //stato WAIT4ACK

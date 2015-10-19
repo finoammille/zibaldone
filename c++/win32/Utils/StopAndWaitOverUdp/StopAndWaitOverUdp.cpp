@@ -39,6 +39,7 @@ StopAndWaitOverUdp::StopAndWaitOverUdp(int udpPort)
 	register2Label(getTxDataLabel());
 	register2Label(ctxt->srv->getRxDataLabel());
     register2Label(ctxt->ackTimer->getTimerId());
+    register2Label(idleAndReady::idleAndReadyLabel());
 }
 //------------------------------------------------------------------------------
 StopAndWaitOverUdp::~StopAndWaitOverUdp()
@@ -80,6 +81,7 @@ void StopAndWaitOverUdp::run()
         Ev = pullOut();
         if(Ev) {
             ziblog(LOG::INF, "received event with label %s", Ev->label().c_str());
+            ziblog(LOG::DBG, "current TxQueue size=%zu", ctxt->txQueue.size());
             if(dynamic_cast<StopThreadEvent *>(Ev)) exit = true;
             else if(dynamic_cast<UdpPkt *>(Ev)) {
                 UdpPkt* ev = (UdpPkt*)Ev;
@@ -89,7 +91,9 @@ void StopAndWaitOverUdp::run()
                     if(!ctxt->txQueue.empty()) changeState(state->messageInTxQueueHndl(ctxt));
                 }
             } else if(dynamic_cast<TimeoutEvent *>(Ev)) changeState(state->ackTimeoutHndl(ctxt));
-            else ziblog(LOG::ERR, "UNHANDLED EVENT");
+            else if(dynamic_cast<idleAndReady *>(Ev)) {
+                if(!ctxt->txQueue.empty()) changeState(state->messageInTxQueueHndl(ctxt));
+            } else ziblog(LOG::ERR, "UNHANDLED EVENT");
             delete Ev;
         }
     }
@@ -240,7 +244,7 @@ StopAndWaitOverUdpState* StopAndWaitOverUdpWait4AckState::dgramRxDataEventHndl(S
                 ziblog(LOG::INF, "WAIT4ACK ==> IDLE");
                 return new StopAndWaitOverUdpIdleState();
             }
-        } else {
+        } else {//tx successful!!!
             ctxt->retryN=0;
             ctxt->txQueue.pop_front();
             ziblog(LOG::INF, "first message removed from txQueue");
