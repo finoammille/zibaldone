@@ -1,21 +1,30 @@
 /*
  *
- * zibaldone - a C++ library for Thread, Timers and other Stuff
+ * zibaldone - a C++/Java library for Thread, Timers and other Stuff
+ *
  * http://sourceforge.net/projects/zibaldone/
+ *
+ * version 3.1.2, August 29th, 2015
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, version 2.
+ * This software is provided 'as-is', without any express or implied
+ * warranty.  In no event will the authors be held liable for any damages
+ * arising from the use of this software.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Permission is granted to anyone to use this software for any purpose,
+ * including commercial applications, and to alter it and redistribute it
+ * freely, subject to the following restrictions:
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * 1. The origin of this software must not be misrepresented; you must not
+ *    claim that you wrote the original software. If you use this software
+ *    in a product, an acknowledgment in the product documentation would be
+ *    appreciated but is not required.
+ * 2. Altered source versions must be plainly marked as such, and must not be
+ *    misrepresented as being the original software.
+ * 3. This notice may not be removed or altered from any source distribution.
+ *
+ * ilant ilant@users.sourceforge.net
  *
  */
 
@@ -42,15 +51,7 @@ Event::Event(const std::string& label):_label(label)
     }
 }
 
-Event::Event(const Event &ev) {_label=ev._label;}
-
 Event::~Event(){_label.clear();}
-
-Event & Event::operator = (const Event &ev)
-{
-    _label = ev._label;
-    return *this;
-}
 
 void Event::emitEvent()
 {
@@ -175,10 +176,10 @@ Event* Thread::pullOut(int maxWaitMsec)
         else {
             time_t s = maxWaitMsec/1000;
             long ns = (maxWaitMsec%1000)*1000000;
-            struct timeval tp;
-            gettimeofday(&tp, NULL);
+            struct timespec tp;
+            clock_gettime(CLOCK_REALTIME,&tp);
             s += tp.tv_sec;
-            ns += tp.tv_usec*1000;
+            ns += tp.tv_nsec;
             s += (ns/1000000000);
             ns %= 1000000000;
             struct timespec ts;
@@ -217,10 +218,10 @@ Event* Thread::pullOut(std::deque <std::string> labels, int maxWaitMsec)
     bool timeout = false;
     time_t s = maxWaitMsec/1000;
     long ns = (maxWaitMsec%1000)*1000000;
-    struct timeval tp;
-    gettimeofday(&tp, NULL);
+    struct timespec tp;
+    clock_gettime(CLOCK_REALTIME,&tp);
     s += tp.tv_sec;
-    ns += tp.tv_usec*1000;
+    ns += tp.tv_nsec;
     s += (ns/1000000000);
     ns %= 1000000000;
     struct timespec ts;
@@ -247,8 +248,8 @@ Event* Thread::pullOut(std::deque <std::string> labels, int maxWaitMsec)
             pthread_mutex_unlock(&_lockQueue);
             return NULL;
         }
-        gettimeofday(&tp, NULL);
-        timeout = (tp.tv_sec > ts.tv_sec) || ((tp.tv_sec == ts.tv_sec) && (tp.tv_usec*1000 >= ts.tv_nsec));
+        clock_gettime(CLOCK_REALTIME,&tp);
+        timeout = (tp.tv_sec > ts.tv_sec) || ((tp.tv_sec == ts.tv_sec) && (tp.tv_nsec >= ts.tv_nsec));
     }
     pthread_mutex_unlock(&_lockQueue);
     return NULL;
