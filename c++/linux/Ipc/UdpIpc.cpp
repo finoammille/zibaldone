@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -66,6 +66,7 @@ Udp::Udp(int port):udpPort(port)
     reader._addr=_addr;
     reader.exit=false;
     register2Label(getTxDataLabel());//self-registration to transmission request event emitted by class-users
+                                     //autoregistrazione sugli eventi di richiesta di trasmissione inviatigli dagli utilizzatori
 }
 
 Udp::~Udp() {close(_sockId);}
@@ -105,6 +106,7 @@ void Udp::Stop()
 {
     reader.Stop();
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,22)//eventFd is not available with this version so we have to do polling
+                                               //non c'e` eventFd x cui occorre aspettare il polling...
     reader.Join();
 #endif
     Thread::Stop();
@@ -112,10 +114,9 @@ void Udp::Stop()
 
 void Udp::Join()
 {
-    if(alive()) {
-        reader.Join();
-        Thread::Stop();
-    } else reader.Stop();
+    //N.B.: non e` possibile che reader stia girando ma TcpConnHandler sia terminato.
+    reader.Join();
+    Thread::Stop();
 }
 
 Udp::Reader::Reader()
@@ -134,7 +135,9 @@ void Udp::Reader::run()
     std::stringstream sap;
     sap<<_sockId;
     std::string rxDataLabel = "dgramRxDataEvent"+sap.str();//REM!! it must = Udp::getRxDataLabel()
+                                                           //REM!! deve essere = a quella ritornata da Udp::getRxDataLabel()
     const int maxSize = 1024;//we choose to set 1 kb max each datagram ... if not enough u can modify this....
+                             //1 kb max payload a pacchetto... se non basta, modificare qui!
     unsigned char rxbyte[maxSize];
     fd_set rdfs;//file descriptor set
     int nfds=(efd>_sockId ? efd : _sockId)+1;
@@ -145,6 +148,7 @@ void Udp::Reader::run()
         if(select(nfds, &rdfs, NULL, NULL, NULL)==-1) ziblog(LOG::ERR, "select error (%s)", strerror(errno));
         else {
             if(FD_ISSET(_sockId, &rdfs)) {//available data on socket
+                                          //dati presenti sul socket
                 int len = 0;
                 socklen_t address_len = sizeof(_addr);
                 if((len = recvfrom(_sockId, rxbyte, maxSize, 0, (sockaddr*)&_addr, &address_len)) > 0) {
@@ -154,6 +158,7 @@ void Udp::Reader::run()
                     rx.emitEvent();
                 }
             } else if(FD_ISSET(efd, &rdfs)) {//stop event
+                                             //evento di stop
                 unsigned char exitFlag[8];
                 if(read(efd, exitFlag, 8)==-1) ziblog(LOG::ERR, "read from efd error (%s)", strerror(errno));
                 if(exitFlag[7]!=1) ziblog(LOG::ERR, "unexpected exitFlag value (%d)", exitFlag[7]);
@@ -170,7 +175,9 @@ void Udp::Reader::run()
     std::stringstream sap;
     sap<<_sockId;
     std::string rxDataLabel = "dgramRxDataEvent"+sap.str();//REM!! it must = Udp::getRxDataLabel()
+                                                           //REM!! deve essere = a quella ritornata da Udp::getRxDataLabel()
     const int maxSize = 1024;//we choose to set 1 kb max each datagram ... if not enough u can modify this....
+                             //1 kb max payload a pacchetto... se non basta, modificare qui!
     unsigned char rxbyte[maxSize];
     fd_set rdfs;//file descriptor set
 	int nfds=_sockId+1;
@@ -179,12 +186,14 @@ void Udp::Reader::run()
         FD_ZERO(&rdfs);
         FD_SET(_sockId, &rdfs);
 		tv.tv_sec = 1;//1 sec polling to catch any Stop()
+                      //1 sec di polling x eventuale Stop()
 		tv.tv_usec = 0;
         int ret = select(nfds, &rdfs, NULL, NULL, &tv);
 		if(ret) {
 			if (ret<0) ziblog(LOG::ERR, "select error (%s)", strerror(errno));
 			else {
-				if(FD_ISSET(_sockId, &rdfs)) {//available data on socketdati presenti sul socket
+				if(FD_ISSET(_sockId, &rdfs)) {//available data on socket
+                                              //dati presenti sul socket
 					int len = 0;
 					socklen_t address_len = sizeof(_addr);
 					if((len = recvfrom(_sockId, rxbyte, maxSize, 0, (sockaddr*)&_addr, &address_len)) > 0) {
@@ -196,7 +205,11 @@ void Udp::Reader::run()
 				} /* N.B.: select returns if there are available data on socket and sets _sockId in rdfs, or
 				   * if timeout (1 sec in our case). So. if Stop() is called then exit is set to true and
                    * thread exits gently
-                   */
+                   * :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+                   * nota: la select ritorna se c'e` qualcosa sul socket, e nel caso setta _sockId in rdfs, oppure
+				   * per timeout (nel nostro caso impostato ad 1 secondo). Quindi se viene chiamato il metodo Stop()
+				   * questo imposta exit=true che permette l'uscita pulita dal thread.
+				   */
 			}
 		}
     }

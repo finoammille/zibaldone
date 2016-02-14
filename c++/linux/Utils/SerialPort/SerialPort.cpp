@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -108,7 +108,7 @@ void SerialPort::SetBaudRate(int rate)
         case 115200: rate = B115200; break;
         default: ziblog(LOG::ERR, "SetBaudRate = %d failed", rate);
     }
-    //add new settings
+    //adds new settings
     _serialPortSettings.c_cflag &= ~(CBAUD | CBAUDEX);
     _serialPortSettings.c_cflag |= rate;
     cfsetispeed(&_serialPortSettings, rate);
@@ -122,9 +122,9 @@ void SerialPort::SetParity(SerialPort::Parity parity)
     switch(parity) {
         case SerialPort::ParityNone:
             _serialPortSettings.c_cflag &= ~PARENB;//disable parity generation and check
-            _serialPortSettings.c_cflag &= ~PARODD;//reset of other parity flags
+            _serialPortSettings.c_cflag &= ~PARODD;//reset degli altri flag della parita'
 #ifdef CMSPAR //arm board
-            _serialPortSettings.c_cflag &= ~CMSPAR;//reset of other parity flags
+            _serialPortSettings.c_cflag &= ~CMSPAR;//reset degli altri flag della parita'
 #endif
             _serialPortSettings.c_iflag &= ~(INPCK);//disable input parity checking
             break;
@@ -193,7 +193,7 @@ void SerialPort::SetStopBits(int stopBits)
 void SerialPort::SetLocal(bool isLocal)
 {
     if(isLocal) {
-        _serialPortSettings.c_cflag |= CLOCAL;
+        _serialPortSettings.c_cflag |= CLOCAL;//indica che non bisogna controllare le line (come il carrier detect) del modem.
         _serialPortSettings.c_cflag &= ~HUPCL;
     } else {
         _serialPortSettings.c_cflag &= ~CLOCAL;
@@ -270,6 +270,7 @@ SerialPort::SerialPort(
     tcflush(fd, TCIFLUSH);
     tcsetattr(fd,TCSANOW,&_serialPortSettings);
     usleep(10000);//10 msec sleep. Normally not necessary, but sometimes we might need this (i.e. for ftdi serial port on a usb hub)
+                  //10 msec per dare tempo alla seriale. In genere non serve, ma incerti casi (x es. seriali ftdi su hub usb) e` necessario
 }
 
 SerialPort::~SerialPort(){close(fd);}

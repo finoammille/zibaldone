@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -68,6 +68,32 @@ Use:
 5) to transmit data over the connection you have to emit an Event of type
    RawByteBufferData with label set to the label returned by the
    ConnHandler::getTxDataLabel() method
+
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+Utilizzo:
+
+1) istanziare un oggetto TcpServer specificando la porta "P" di ascolto
+2) istanziare un oggetto TcpClient specificando l'IP e la porta "P" su
+   cui e` in ascolto il TcpServer
+3) per connettere TcpClient con TcpServer, chiamare Accept() sul TcpServer e
+   successivamente chiamare Connect() sul TcpClient. Entrambi i metodi
+   restituiscono (rispettivamente su TcpServer e TcpClient) un puntatore ad
+   un oggetto TcpConnHandler
+4) per ricevere dati da una connessione occorre registrarsi sull'evento
+   di tipo RawByteBufferData il cui id viene restituito dal metodo
+   getRxDataLabel() di TcpConnHandler
+5) per trasmettere dati occorre emettere un Evento di tipo RawByteBufferData
+   con label uguale a quello restituito dal metodo getTxDataLabel() di
+   ConnnHandler.
+
+TODO: Il TcpServer rimane in ascolto su una singola porta, una volta instaurata
+      la connessione, il TcpServer non e` piu` in ascolto. Per implementare un TcpServer che
+      gestisce piu` connessioni occorre implementare una classe che generi un nuovo TcpServer
+      ad ogni richiesta di connessione su cui passa la richiesta spostandola su una nuova
+      porta, per poi tornare in ascolto sulla porta originale per una nuova richiesta
+      da gestire!
+
 */
 
 namespace Z
@@ -77,16 +103,16 @@ class TcpConnHandler : public Thread {
     friend class TcpServer;
     friend class TcpClient;
     int _sockId;
-    std::string _sap;
+    std::string _sap;//serve per taggare univocamente gli eventi relativi ad uno specifico socket
     bool exit;
-    void run();
+    void run();//ciclo del thread che gestisce la scrittura
     class Reader : public Thread {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,22)
-        int efd;
+        int efd; //Event file descriptor
 #endif
         bool exit;
         int _sockId;
-        void run();
+        void run();//ciclo del thread per la lettura
     public:
         Reader(int);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,22)
@@ -95,14 +121,14 @@ class TcpConnHandler : public Thread {
         void Start();
         void Stop();
     } reader;
-    TcpConnHandler(int sockId);
+    TcpConnHandler(int sockId);//TcpConnHandler non deve essere istanziabile, ma solo ottenibile effettuando una connessione.
 public:
     ~TcpConnHandler();
     void Start();
     void Stop();
     void Join();
-    std::string getTxDataLabel(){return "txDataEvent"+_sap;}
-    std::string getRxDataLabel(){return "rxDataEvent"+_sap;}
+    std::string getTxDataLabel(){return "txDataEvent"+_sap;}//id dell'evento di richiesta trasmissione dati sul socket (evento ricevuto e gestito da TcpConnHandler)
+    std::string getRxDataLabel(){return "rxDataEvent"+_sap;}//id dell'evento di notifica ricezione dati sul socket (evento emesso da TcpConnHandler)
 };
 
 class TcpServer {
@@ -114,14 +140,22 @@ public:
 private:
     /*
      * the well known big 3 rule of C++ says:
-     * "if your class needs to define the destructor or the copy constructor or the copy
-     * assigment operator then it should probably explicitly define all three"
+     * "if your class needs to define the destructor or the copy constructor or the
+     * copy assigment operator then it should probably explicitly define all three"
      * In our case since a Thread cannot be assigned or copied, we declare the
      * copy constructor and the assignment operator as private. This way we can
      * prevent and easily detect any inadverted abuse
+     * ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+     * secondo la "Law of The Big Three" del c++, se si definisce uno tra:
+     * distruttore, costruttore di copia o operatore di assegnazione,
+     * probabilmente occorrera' definire anche i due restanti (e non usare
+     * quelli di default cioe`!). Tuttavia in questo caso un Thread non puo`
+     * essere assegnato o copiato, per cui il rispetto della suddetta regola
+     * avviene rendendoli privati in modo da prevenirne un utilizzo
+     * involontario!
      */
-    TcpServer(const TcpServer &);
-    TcpServer & operator = (const TcpServer &);
+    TcpServer(const TcpServer &);//non ha senso ritornare o passare come parametro un TcpServer per valore
+    TcpServer & operator = (const TcpServer &);//non ha senso assegnare un TcpServer per valore
 };
 
 class TcpClient {
@@ -135,14 +169,22 @@ public:
 private:
     /*
      * the well known big 3 rule of C++ says:
-     * "if your class needs to define the destructor or the copy constructor or the copy
-     * assigment operator then it should probably explicitly define all three"
+     * "if your class needs to define the destructor or the copy constructor or the
+     * copy assigment operator then it should probably explicitly define all three"
      * In our case since a Thread cannot be assigned or copied, we declare the
      * copy constructor and the assignment operator as private. This way we can
      * prevent and easily detect any inadverted abuse
+     * ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+     * secondo la "Law of The Big Three" del c++, se si definisce uno tra:
+     * distruttore, costruttore di copia o operatore di assegnazione,
+     * probabilmente occorrera' definire anche i due restanti (e non usare
+     * quelli di default cioe`!). Tuttavia in questo caso un Thread non puo`
+     * essere assegnato o copiato, per cui il rispetto della suddetta regola
+     * avviene rendendoli privati in modo da prevenirne un utilizzo
+     * involontario!
      */
-    TcpClient(const TcpClient &);
-    TcpClient & operator = (const TcpClient &);
+    TcpClient(const TcpClient &);//non ha senso ritornare o passare come parametro un TcpClient per valore
+    TcpClient & operator = (const TcpClient &);//non ha senso assegnare un TcpClient per valore
 };
 //------------------------------------------------------------------------------
 }//namespace Z

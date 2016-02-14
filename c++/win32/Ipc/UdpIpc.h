@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -52,6 +52,28 @@ Use:
 
 REM: UDP is connectionless so it's up to you handle any transmission error
      (e.g. by mean of a stop and wait protocol)
+
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+Utilizzo:
+
+1) istanziare Udp specificando la porta Udp su cui il thread e` in ascolto per
+   ricevere pacchetti Udp. L'indirizzo ip non viene specificato perche` e` sot-
+   tointeso che sia localhost (non posso ricevere pacchetti destinati ad un ip
+   diverso!)
+
+   N.B.: ricordarsi di far partire il thread con Start come al solito!
+
+2) per ricevere dati occorre registrarsi sull'evento di tipo UdpPkt la cui label
+   viene restituita dal metodo getRxDataLabel().
+
+3) per trasmettere dati occorre emettere un Evento di tipo UdpPkt con label uguale
+   a quella restituita dal metodo getTxDataLabel(). In questo modo sostanzialmente
+   si dice a Upd (il thread locale) di trasmettere un datagram verso un determinato
+   destinatario individuato univocamente da (ip/udpPort)
+
+NOTA: poiche` udp e` connectionless, occorre gestire autonomamente le eventuali
+      ritrasmissioni (per esempio utilizzando uno stop and wait)
 */
 //------------------------------------------------------------------------------
 namespace Z
@@ -67,6 +89,21 @@ namespace Z
     the event label is = to getRxDataLabel() or the destination ip address if
     label = getTxDataLabel(). In other words UdpPkt is a RawByteBufferData with
     the addition of the "udp coordinates"
+
+    ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+    evento UdpPkt
+
+    evento per la tx/rx di un pacchetto udp.
+
+    sostanzialmente e` un rawbytebufferdata esteso con l'aggiunta di una string
+    che contiene l'indirizzo ip e la porta udp del destinatario o del mittente a
+    seconda che la label dell'evento sia gettxdatalabel oppure getrxdatalabel.
+    in altre parole e` un rawbytebufferdata con in piu` le "coordinate udp".
+
+    nota: il tcp usa semplicemente rawbytebufferdata perche` una volta stabilita
+          la connessione i dati viaggano su un collegamento connesso punto-punto,
+          invece udp e` connectionless.
 */
 class UdpPkt : public RawByteBufferData {
     const int udpPort;
@@ -83,11 +120,11 @@ class Udp : public Thread {
     const int udpPort;
     SOCKET _sockId;
     sockaddr_in _addr;
-    std::string _sap;
+    std::string _sap;//serve per taggare univocamente gli eventi relativi ad uno specifico socket
     bool exit;
     void run();//write loop
     class Reader : public Thread {
-        friend class Udp;
+        friend class Udp;//per poter referenziare _sockId
         bool exit;
         SOCKET _sockId;
         sockaddr_in _addr;
@@ -103,8 +140,8 @@ public:
     void Start();
     void Stop();
     void Join();
-    std::string getTxDataLabel(){return "dgramTxDataEvent"+_sap;}
-    std::string getRxDataLabel(){return "dgramRxDataEvent"+_sap;}
+    std::string getTxDataLabel(){return "dgramTxDataEvent"+_sap;}//id dell'evento di richiesta trasmissione datagram
+    std::string getRxDataLabel(){return "dgramRxDataEvent"+_sap;}//id dell'evento di notifica ricezione datagram
 };
 //------------------------------------------------------------------------------
 }//namespace Z

@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -35,12 +35,16 @@ namespace Z
 {
 //-------------------------------------------------------------------------------------------
 LOG* LOG::_instance = NULL;
-bool LOG::_isRunning = false;
 LOG::Level LOG::level = LOG::ERR;
 int LOG::_bufferSize = 14;//minimum length to write "...TRUNCATED!" just in case of insufficient buffer space
+                          //spazio minimo necessario per scrivere "...TRUNCATED!" in caso di buffer insufficiente
+pthread_mutex_t LOG::_lock = PTHREAD_MUTEX_INITIALIZER;
 
-//The logCmdEvent event is used internally by LOG and is not intended for public use. This is why it's
-//declared here instead of in the Log.h file
+//The logCmdEvent event is used internally by LOG and is not intended for
+//public use. This is why it's declared here instead of in the Log.h file
+//::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+//l'evento logCmdEvent e` utilizzato internamente da LOG pertanto non va
+//messo in Log.h altrimenti sarebbe visibile a tutti!
 struct logCmdEvent : public Event {
     std::string logMsg;
     logCmdEvent(const std::string & msg):Event("logCmdEvent"), logMsg(msg){}
@@ -63,39 +67,41 @@ LOG::LOG(const std::string& logFileDstDirPath, const std::string& logFileNamePre
     <<"-"<<std::setw(2)<<std::setfill('0')<<(current->tm_year-100);//year
     logFileName += tmp.str();
     register2Label("logCmdEvent");//self-registration for log requests
+                                  //autoregistrazione per le richieste di log
     logFile.open(logFileName.c_str(), std::ios::app);
 }
 
 void LOG::set(const std::string& logFileDstDirPath, const std::string& logFileNamePrefix, Level logLev, bool showLogOnConsole, int bufferSize)
 {
+    pthread_mutex_lock(&_lock);
     if(!_instance) _instance=new LOG(logFileDstDirPath, logFileNamePrefix);
     _instance->level=logLev;
     _instance->_showLogOnConsole=showLogOnConsole;
     if(bufferSize<14) bufferSize=14;
     _instance->_bufferSize=bufferSize;
-    if(!_instance->_isRunning){
-        _instance->Start();
-        _instance->_isRunning = true;
-    }
+    _instance->Start();
+    pthread_mutex_unlock(&_lock);
 }
 
 int LOG::bufferSize() {return _bufferSize;}
 
 void LOG::disable()
 {
-    if(!_instance) return;
-    if(_instance->_isRunning) {
-        _instance->Stop();
-        _instance->_isRunning = false;
+    pthread_mutex_lock(&_lock);
+    if(!_instance) {
+        pthread_mutex_unlock(&_lock);
+        return;//non c'e' nulla da disabilitare!
     }
+    _instance->Stop();
     _instance->logFile.close();
     delete _instance;
     _instance=NULL;
+    pthread_mutex_unlock(&_lock);
 }
 
 void LOG::enqueueMessage(LOG::Level level, const std::string& log)
 {
-    if(level >= LOG::level) {
+	if(level >= LOG::level) {
         logCmdEvent logCmd(log);
         logCmd.emitEvent();
     }

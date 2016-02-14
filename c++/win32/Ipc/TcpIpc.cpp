@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -40,6 +40,7 @@ TcpConnHandler::TcpConnHandler(SOCKET sockId):_sockId(sockId), reader(sockId)
     sap<<_sockId;
     _sap = sap.str();
     register2Label(getTxDataLabel());//self-registration to transmission request event emitted by class-users
+                                     //autoregistrazione sugli eventi di richiesta di trasmissione inviatigli dagli utilizzatori
 }
 
 void TcpConnHandler::run()
@@ -80,10 +81,9 @@ void TcpConnHandler::Stop()
 
 void TcpConnHandler::Join()
 {
-    if(alive()) {
-        reader.Join();
-        Thread::Stop();
-    } else reader.Stop();
+    //N.B.: non e` possibile che reader stia girando ma TcpConnHandler sia terminato.
+    reader.Join();
+    Thread::Stop();
 }
 
 TcpConnHandler::Reader::Reader(SOCKET sockId) : exit(false), _sockId(sockId){}
@@ -108,17 +108,26 @@ void TcpConnHandler::Reader::run()
 			if(ret==SOCKET_ERROR) ziblog(LOG::ERR, "select error (%d)", WSAGetLastError());
 			else {
 				if(FD_ISSET(_sockId, &rdfs)) {//available data on socket
+                                              //dati presenti sul socket
 					int len = 0;
 					if((len = recv(_sockId, rxbyte, maxSize, 0)) > 0) {
 						RawByteBufferData rx(rxDataLabel, (unsigned char*)rxbyte, len);
 						rx.emitEvent();
-					} else if(len == 0) break;/* the peer has closed the socket. We have to exit thread loop.
-                                               * We do not have to close socket here because it's up to the
-                                               * destructor ~TcpConnHandler
-                                               */
-				} /* note: select returns if there are available data on socket and in that case sets _sockId in rdfs,
-				   * or because of timeout (in our case set to 1 sec). Therefore if the Stop() method has been called
-                   * then exit=true that allows a fair thread exit
+					} else if(len == 0) break;  /* the peer has closed the socket. We have to exit thread loop.
+                                                 * We do not have to close socket here because it's up to the
+                                                 * destructor ~TcpConnHandler
+                                                 * :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+                                                 * il peer ha chiuso il socket. Esco dal loop del thread. La close
+                                                 * del socket non devo farla qui perche' la fa gia' il distruttore
+                                                 * di TcpConnHandler
+                                                 */
+				} /* N.B.: select returns if there are available data on socket and sets _sockId in rdfs, or
+				   * if timeout (1 sec in our case). So. if Stop() is called then exit is set to true and
+                   * thread exits gently
+                   * :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+                   * nota: la select ritorna se c'e` qualcosa sul socket, e nel caso setta _sockId in rdfs, oppure
+				   * per timeout (nel nostro caso impostato ad 1 secondo). Quindi se viene chiamato il metodo Stop()
+				   * questo imposta exit=true che permette l'uscita pulita dal thread.
 				   */
 			}
 		}
@@ -193,7 +202,7 @@ TcpServer::TcpServer(int port)
 
 TcpConnHandler* TcpServer::Accept()
 {
-    SOCKET sockTcpConnHandlerId = accept(_sockId, NULL, NULL);//blocks here until a connection request comes
+    SOCKET sockTcpConnHandlerId = accept(_sockId, NULL, NULL);//rimane bloccato qui sinche` non arriva una richiesta di connessione.
     if (sockTcpConnHandlerId == INVALID_SOCKET) {
         ziblog(LOG::ERR, "accept failed: %d", WSAGetLastError());
         closesocket(_sockId);
@@ -201,7 +210,7 @@ TcpConnHandler* TcpServer::Accept()
         return NULL;
     } else {
         closesocket(_sockId);//No longer need server socket
-        return new TcpConnHandler(sockTcpConnHandlerId);//instantiate the Thread who handles the connection
+        return new TcpConnHandler(sockTcpConnHandlerId);//istanzio il thread che gestisce la connessione
     }
 }
 

@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -34,10 +34,10 @@
 namespace Z
 {
 //-------------------------------------------------------------------------------------------
-static void exceptionHandler(SerialPortException& spEx, std::string portName)
+static void exceptionHandler(SerialPortException& spEx, std::string portName)//metodo statico (scope locale) per evitare codice ripetuto
 {
     zibErr serialPortErrorEvent(SerialPortHandler::getSerialPortErrorLabel(portName), spEx.ErrorMessage());
-    serialPortErrorEvent.emitEvent();
+    serialPortErrorEvent.emitEvent();//l'evento viene emesso in modo che l'utilizzatore della seriale sappia che questa porta non funziona.
 }
 //-------------------------------------------------------------------------------------------
 SerialPortHandler::SerialPortHandler(const std::string& portName,
@@ -52,6 +52,11 @@ sp(portName, baudRate, parity, dataBits, stopBits, flwctrl, toggleDtr,
 toggleRts), reader(sp)
 {
     exit = false;
+    /*
+     * autoregistrazione sull'evento di richiesta di scrittura sulla seriale.
+     * Chi vuol inviare dati sulla porta seriale "_portName" deve
+     * semplicemente inviare un evento  (Event) con label=txDataLabel
+     */
     register2Label(getTxDataLabel());
 }
 
@@ -71,7 +76,8 @@ void SerialPortHandler::run()
             }
         } catch(SerialPortException spEx){
             exceptionHandler(spEx, sp.portName);
-            exit = true;
+            exit = true;//devo comunque uscire per evitare di continuare a emettere lo stesso
+                        //errore ripetutamente (la seriale non funziona! E' scollegata o e' rotta!)
         }
     }
 }
@@ -84,16 +90,15 @@ void SerialPortHandler::Start()
 
 void SerialPortHandler::Stop()
 {
-    Thread::Stop();
     reader.Stop();
+    Thread::Stop();
 }
 
 void SerialPortHandler::Join()
 {
-    if(alive()) {
-        reader.Join();
-        Thread::Stop();
-    } else reader.Stop();
+    //N.B.: non e` possibile che reader stia girando ma TcpConnHandler sia terminato.
+    reader.Join();
+    Thread::Stop();
 }
 
 SerialPortHandler::Reader::Reader(SerialPort& sp):exit(false), sp(sp)
@@ -118,6 +123,7 @@ void SerialPortHandler::Reader::run()
             if(select(nfds, &rdfs, NULL, NULL, NULL)==-1) ziblog(LOG::ERR, "select error");
             else {
                 if(FD_ISSET(sp.fd, &rdfs)) {//data available on serial port
+                                            //dati presenti sulla seriale
                     rxData = sp.Read();
                     if(!rxData.empty()){
                         unsigned char* buffer = new unsigned char[rxData.size()];
@@ -127,6 +133,7 @@ void SerialPortHandler::Reader::run()
                         delete buffer;
                     }
                 } else if(FD_ISSET(efd, &rdfs)) {//stop event
+                                                 //evento di stop
                     unsigned char exitFlag[8];
                     if(read(efd, exitFlag, 8)==-1) ziblog(LOG::ERR, "read from efd error (%s)", strerror(errno));
                     if(exitFlag[7]!=1) ziblog(LOG::ERR, "unexpected exitFlag value (%d)", exitFlag[7]);
@@ -135,7 +142,8 @@ void SerialPortHandler::Reader::run()
             }
         } catch(SerialPortException spEx){
             exceptionHandler(spEx, sp.portName);
-            return;
+            return;//devo comunque uscire per evitare di continuare a emettere lo stesso
+                   //errore ripetutamente (la seriale non funziona! E' scollegata o e' rotta!)
         }
     }
 }
@@ -153,12 +161,14 @@ void SerialPortHandler::Reader::run()
             FD_ZERO(&rdfs);
             FD_SET(sp.fd, &rdfs);
 			tv.tv_sec = 1;//1 sec polling to catch any Stop()
+                          //1 sec di polling x eventuale Stop()
 			tv.tv_usec = 0;
 			int ret = select(nfds, &rdfs, NULL, NULL, &tv);
 			if(ret) {
 				if (ret<0) ziblog(LOG::ERR, "select error (%s)", strerror(errno));
 				else {
 					if(FD_ISSET(sp.fd, &rdfs)) {//available data on serial port
+                                                //dati presenti sulla seriale
 						rxData = sp.Read();
 						if(!rxData.empty()){
 							unsigned char* buffer = new unsigned char[rxData.size()];
@@ -170,13 +180,17 @@ void SerialPortHandler::Reader::run()
 					} /* N.B.: select returns if there are available data on serial port and sets _sockId in rdfs,
 				       * or if timeout (1 sec in our case). So. if Stop() is called then exit is set to true and
                        * thread exits gently
-                       */
+                       * :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+					   * N.B.: la select ritorna se c'e` qualcosa sul socket, e nel caso setta _sockId in rdfs, oppure
+				       * per timeout (nel nostro caso impostato ad 1 secondo). Quindi se viene chiamato il metodo Stop()
+					   * questo imposta exit=true che permette l'uscita pulita dal thread.
+				       */
 				}
 			}
-
         } catch(SerialPortException spEx){
             exceptionHandler(spEx, sp.portName);
-            return;
+            return;//devo comunque uscire per evitare di continuare a emettere lo stesso
+                   //errore ripetutamente (la seriale non funziona! E' scollegata o e' rotta!)
         }
     }
 }

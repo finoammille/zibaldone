@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -34,12 +34,21 @@
 namespace Z
 {
 //-------------------------------------------------------------------------------------------
-//NOTE: some commands do not receive an explicit answer from OS (for example a command
-//followed by "&"). In those cases, we have to set the wait4answ flag to false (by default
-//it's set to true) to avoid a hang waiting for a never coming answer.
+//NOTE: some commands do not receive an explicit answer from OS (for example
+//a command followed by "&"). In those cases, we have to set the wait4answ
+//flag to false (by default it's set to true) to avoid a hang waiting for a
+//never coming answer.
+//:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+//NOTA: alcuni comandi non ricevono una risposta dall'OS (per esempio
+//quando lancio un programma esterno in background con "&"). In questi
+//casi se lascio wait4answ a true (com'e' di default) la fgets rimane
+//bloccata in attesa di dati sullo stream ma i dati non arriveranno mai!
+//In questi casi e` necessario impostare wait4answ a false.
+
 std::string OsCmd::execute(std::string cmd, bool wait4answ=true)
 {
     char buffer[3072];//3k buffer... should be enough!
+                      //3k buffer... dovrebbe bastare!
     std::string out;
     if(cmd[cmd.length()-1]!='\n') cmd+='\n';
     sysOut = popen(cmd.c_str(), "r");
@@ -49,7 +58,9 @@ std::string OsCmd::execute(std::string cmd, bool wait4answ=true)
     }
     if(wait4answ) while(fgets(buffer, sizeof(buffer), sysOut)) out +=buffer;
     pclose(sysOut);
-    return (wait4answ ? out.substr (0,out.length()-1) : out);
+    return (wait4answ ? out.substr (0,out.length()-1) : out);//elimino l'ultimo "\n" in caso di wait4answ altrimenti
+                                                             //ritorno la stringa vuota (che al chiamante non serve,
+                                                             //dato che ha deciso di non leggere la risposta)
 }
 //-------------------------------------------------------------------------------------------
 std::vector<std::string> OsCmd::getSerialPortList()
@@ -59,13 +70,13 @@ std::vector<std::string> OsCmd::getSerialPortList()
     //TODO
 
     /*
-    std::string tmp = execute("ls /dev/ttyS* 2>/dev/null");//serial port list
+    std::string tmp = execute("ls /dev/ttyS* 2>/dev/null");//lista delle porte seriali
     std::stringstream lsdevttysxResult(tmp);
     while(lsdevttysxResult >> tmp) result.push_back(tmp);
-    tmp = execute("ls /dev/ttyUSB* 2>/dev/null");//USB ftdi serial port list
+    tmp = execute("ls /dev/ttyUSB* 2>/dev/null");//lista delle porte seriali USB ftdi
     std::stringstream lsdevttyusbxResult(tmp);
     while(lsdevttyusbxResult >> tmp) result.push_back(tmp);
-    tmp = execute("ls /dev/ttyACM* 2>/dev/null");//USB cdc_acm serial port list
+    tmp = execute("ls /dev/ttyACM* 2>/dev/null");//lista delle porte seriali USB cdc_acm
     std::stringstream lsdevttyacmxResult(tmp);
     while(lsdevttyacmxResult >> tmp) result.push_back(tmp);
     */
@@ -94,6 +105,9 @@ currentDateTime::currentDateTime()
 //-------------------------------------------------------------------------------------------
 std::vector<unsigned char> serializeStdString (const std::string& o)
 {
+    //la lunghezza della stringa messa all'inizio serve per poter concatenare diversi dati
+    //serializzati (altrimenti non saprei dove finisce la serializzazione della stringa e
+    //dove inizia quella di un'altro dato!
     std::vector<unsigned char> sStdS;
     std::vector<unsigned char> sStdSLen = serialize((int)(o.size()));
     std::copy(sStdSLen.begin(), sStdSLen.end(), std::back_inserter(sStdS));
@@ -114,6 +128,7 @@ std::string deserializeStdString (std::vector<unsigned char> & s)
 
 #ifdef arm
     //arm compiler does not support default parameters...
+    //il compilatore arm non supporta i parametri di default...
 configFileHandler::configFileHandler(std::string configFile):configFile(configFile)
 {
     if(configFile.empty()){
@@ -121,6 +136,7 @@ configFileHandler::configFileHandler(std::string configFile):configFile(configFi
         return;
     }
     if(commentTags.empty()) {//by default, unless otherwise specified, all lines starting with " #" or " ; " are comments
+                             //se non specificato diversamente, di default sono commenti le linee che iniziano con "#" o con ";"
         this->commentTags.push_back('#');
         this->commentTags.push_back(';');
     }
@@ -135,6 +151,7 @@ configFileHandler::configFileHandler(std::string configFile,
         return;
     }
     if(commentTags.empty()) {//by default, unless otherwise specified, all lines starting with " #" or " ; " are comments
+                             //se non specificato diversamente, di default sono commenti le linee che iniziano con "#" o con ";"
         this->commentTags.push_back('#');
         this->commentTags.push_back(';');
     }
@@ -152,6 +169,7 @@ configFileHandler::configFileHandler(std::string configFile,
         return;
     }
     if(commentTags.empty()) {//by default, unless otherwise specified, all lines starting with " #" or " ; " are comments
+                             //se non specificato diversamente, di default sono commenti le linee che iniziano con "#" o con ";"
         this->commentTags.push_back('#');
         this->commentTags.push_back(';');
     }
@@ -168,17 +186,24 @@ void configFileHandler::read()
     while (std::getline(cf, s)) {
         std::string::size_type begin=s.find_first_not_of(" \f\t\v");
         if(begin==std::string::npos) continue;//skip of empty lines
+                                              //salto le linee vuote
         if(std::string(commentTags.begin(), commentTags.end()).find(s[begin])!=std::string::npos) continue;//skip of comments
+                                                                                                           //salto i commenti
         //parameter name extraction (key)
+        //estrazione del nome del parametro (key)
         std::string::size_type end=s.find('=', begin);
         key=s.substr(begin, end-begin);
         key.erase(key.find_last_not_of(" \f\t\v")+1);//deletion of any leading and trailing spaces
+                                                     //elimino gli eventuali spazi iniziali e finali
         if(key.empty()) continue;//ignore of any empty key value
+                                 //scarto eventuali valori vuoti (chiave vuota)
         //parameter value extraction
+        //estrazione del valore corrispondente (value)
         begin=s.find_first_not_of(" \f\n\r\t\v", end+1);
         end=s.find_last_not_of(" \f\n\r\t\v")+1;
         value=s.substr(begin, end-begin);
         //insertion of the (key, value) pair into the map
+        //inserisco la coppia (key, value) nella mappa
         configData[key]=value;
     }
 }
@@ -207,7 +232,8 @@ std::string configFileHandler::getRawValue(const std::string & parameter)
 void configFileHandler::insertCommentHeaderRaw(std::string commentRaw)
 {
     std::string::size_type begin=commentRaw.find_first_not_of(" \f\t\v");
-    if(std::string(commentTags.begin(), commentTags.end()).find(commentRaw[begin])==std::string::npos) {
+    if(commentRaw.empty() || std::string(commentTags.begin(), commentTags.end()).find(commentRaw[begin])==std::string::npos) {
+        //inserisco il carattere iniziale del commento a inizio riga (non c'e`). Uso il primo della lista
         std::string commentTag(1, commentTags.front());
         commentRaw = commentTag + " " + commentRaw;
     }
@@ -218,6 +244,7 @@ void configFileHandler::insertCommentHeaderRaw(std::string commentRaw)
 void configFileHandler::addOrUpdateKeyValue(const std::string& parameter, const std::string& value)
 {
     configData[parameter]=value;//update of existing parameter, if any, or creation of new entry
+                                //aggiorno il parametro esistente o se non c'e` creo una entry nuova
 }
 
 bool configFileHandler::getBoolValue(bool& dest, std::string param)

@@ -4,7 +4,7 @@
 #
 # http://sourceforge.net/projects/zibaldone/
 #
-# version 3.1.2, August 29th, 2015
+# version 3.2.0, February 14th, 2016
 #
 # Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
 #
@@ -34,6 +34,7 @@ SHELL=/bin/bash
 AR:=ar
 DEBUG:=-g
 
+#se target non specificato compilo sulla macchina locale
 target=
 
 ifeq ($(target), i386)
@@ -42,7 +43,8 @@ ifeq ($(target), i386)
 else ifeq ($(target), arm)
 	CC=arm-none-linux-gnueabi-g++
 	AR:=arm-none-linux-gnueabi-ar
-	ARCH_CFLAGS=-Darm
+	ARCH_CFLAGS=-Darm -fPIC
+	#ARCH_CFLAGS=-Darm
 else ifeq ($(target), x86_64)
 	CC=g++ -m64
 	ARCH_CFLAGS=-fPIC
@@ -55,7 +57,10 @@ else
 	endif
 endif
 
-CFLAGS:=-Wall -Werror $(DEBUG) $(ARCH_CFLAGS)
+DFLAGS= -D_ZDEBUG -D_REENTRANT
+
+#CXXFLAGS:=-Wall -Werror -pedantic -Wextra $(DEBUG) $(ARCH_CFLAGS)
+CXXFLAGS:=-Wall -Werror $(DEBUG) $(DFLAGS) $(ARCH_CFLAGS)
 
 IFLAGS = -I./Events -I./Ipc -I./Log -I./Utils/SerialPort -I./Thread -I./Timer -I./Utils/Tools
 LFLAGS = -lpthread
@@ -90,7 +95,7 @@ OBJ = $(foreach OBJ_NAME, $(OBJ_NAMES), $(OBJ_NAME).o)
 
 # targets
 %.o: %.cpp $(DEPS)
-	$(CC) -c -o $@ $< $(CFLAGS) $(IFLAGS)
+	$(CC) -c -o $@ $< $(CXXFLAGS) $(IFLAGS)
 
 zibaldone: zibaldoneDynamic zibaldoneStatic
 
@@ -106,5 +111,11 @@ zibaldoneStatic: $(OBJ)
 	ranlib lib$@.a
 	mv  lib$@.a ./build/libzibaldone.a
 
+all: zibaldone #non serve, aggiunto solo per fare import del progetto su eclipse
+
 clean:
 	rm -f $(OBJ) ./build/libzibaldone.so ./build/libzibaldone.a
+
+#test:
+#	@echo machine=$(MACHINE) additional flags=$(ARCH_CFLAGS)
+

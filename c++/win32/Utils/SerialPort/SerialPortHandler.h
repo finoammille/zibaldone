@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -52,6 +52,24 @@
  *    uniquely identifies the serial port managed by SerialPortHandler (e.g. \dev\ttyS0), in case
  *    of error. The event label can be obtained by means of the method getSerialPortErrorLabel
  *
+ * ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ *
+ * SerialPortHandler implementa un thread che gestisce la porta seriale.
+ *
+ * 1) SerialPortHandler emette un evento di tipo RawByteBufferData con label = "rxDataEventxxx"
+ *    dove "xxx" identifica univocamente la porta seriale gestita da SerialPortHandler (x es.
+ *    /dev/ttyS0) ogni volta che riceve un burst di byte sulla porta. Il nome dell'evento (label)
+ *    e' ottenibile invocando il metodo getRxDataLabel. Chi desidera ricevere l'evento deve registrarsi.
+ *
+ * 2) SerialPortHandler e` registrato per ricevere eventi di tipo RawByteBufferData con label =
+ *    "txDataEventxxx" dove "xxx" identifica univocamente la porta seriale gestita da SerialPortHandler
+ *    (x es. Quindi ogni volta che si vuole trasmettere dei byte sulla porta basta emettere un evento di
+ *    tipo RawByteBufferData avente come label la stringa identificativa ottenibile invocando il metodo
+ *    getTxDataLabel.
+ *
+ * 3) SerialPortHandler emette un evento zibErr con label = "serialPortErrorEventxxx" dove "xxx"
+ *    identifica univocamente la porta seriale gestita da SerialPortHandler (x es. /dev/ttyS0) in caso di
+ *    errore Il nome dell'evento (label) e' ottenibile invocando il metodo getSerialPortErrorLabel
  */
 
 namespace Z
@@ -61,10 +79,12 @@ class SerialPortHandler : public Thread {
     SerialPort sp;
     bool exit;
     void run();//write thread loop
+               //ciclo del thread che gestisce le richieste di trasmissione sulla porta (writer)
     class Reader : public Thread {
 		bool exit;
         SerialPort& sp;
         void run();//read thread loop
+                   //ciclo del thread in ascolto sulla porta
     public:
         Reader(SerialPort&);
 		void Start();
@@ -78,16 +98,24 @@ public:
         int stopBits,
         SerialPort::FlowControl flwctrl,
         bool toggleDtr = false,
-        bool toggleRts = false);
+        bool toggleRts = false);//Constructor. Nota: ToggleDtr e ToggleRts normalmente non servono e sono impostate di
+                                //default a false. In alcuni rari casi (per esempio nello stacker controllato tramite
+                                //chip FT232RL della FTDI che simula una porta seriale via USB) occorre invertirli entrambi.
     void Start();
     void Stop();
     void Join();
-	std::string getRxDataLabel(){return "rxDataEvent"+sp.portName;}//label for rx events emitted by SerialPortHandler
-	static std::string getRxDataLabel(const std::string& port) {return "rxDataEvent"+port;}//label for rx events emitted by SerialPortHandler
-	std::string getTxDataLabel(){return "txDataEvent"+sp.portName;}//label for tx requests events
-	static std::string getTxDataLabel(const std::string& port) {return "txDataEvent"+port;}//label for tx requests events
-	std::string getSerialPortErrorLabel(){return "serialPortErrorEvent"+sp.portName;}//label for serial error
-	static std::string getSerialPortErrorLabel(const std::string& port) {return "serialPortErrorEvent"+port;}//label for serial error
+    std::string getRxDataLabel(){return "rxDataEvent"+sp.portName;}//label for rx events emitted by SerialPortHandler
+                                                                   //label ricezione emesso da SerialPortHandler
+	static std::string getRxDataLabel(const std::string& port) {return "rxDataEvent"+port;}//label ricezione emesso da SerialPortHandler
+                                                                                           //label ricezione emesso da SerialPortHandler
+    std::string getTxDataLabel(){return "txDataEvent"+sp.portName;}//label for tx requests events
+                                                                   //label x richiesta di trasmissione, ricevuto da SerialPortHandler
+    static std::string getTxDataLabel(const std::string& port) {return "txDataEvent"+port;}//label for tx request events
+                                                                                           //label x richiesta di trasmissione, ricevuto da SerialPortHandler
+    std::string getSerialPortErrorLabel(){return "serialPortErrorEvent"+sp.portName;}//label for serial error
+                                                                                     //label x serial error, ricevuto da SerialPortHandler
+    static std::string getSerialPortErrorLabel(const std::string& port) {return "serialPortErrorEvent"+port;}//label for serial error
+                                                                                                             //label x serial error, ricevuto da SerialPortHandler
 };
 //-------------------------------------------------------------------------------------------
 }//namespace Z
