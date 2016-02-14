@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -43,6 +43,13 @@ namespace Z
 NOTE: the class Timer implements an "alarm clock". The end user instantiate a Timer object
       and gives it a name. When the timer expires it's emitted an event with label equal
       to the name assigned to it.
+
+:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+NOTA: la classe Timer implementa sostanzialmente una "sveglia". L'utilizzatore, istanzia un oggetto
+      Timer, al quale assegna un nome, Alla scadenza del timer, viene emesso un evento avente il nome
+      assegnato alla sveglia. Le regole sono le solite: chi vuol ricevere l'evento deve registrarsi
+      sull'Id (nome) dell'evento
 */
 class Timer {
     timer_t _tId;
@@ -58,6 +65,9 @@ public:
     void Start(int mSec=-1);// the default mSec value (-1) indicates the timer keeps the previously
                             // assigned duration (variable _duration). So a call to Start() without
                             // parameters rearms the Timer with previous duration.
+                            // ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+                            // il valore di default (-1) indica che il timer va armato con la durata 
+                            // già specificata nella variabile _duration
     void Stop();
 };
 //-------------------------------------------------------------------------------------------

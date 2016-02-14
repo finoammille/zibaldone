@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -41,6 +41,7 @@ TcpConnHandler::TcpConnHandler(int sockId):_sockId(sockId), reader(sockId)
     sap<<_sockId;
     _sap = sap.str();
     register2Label(getTxDataLabel());//self-registration to transmission request event emitted by class-users
+                                     //autoregistrazione sugli eventi di richiesta di trasmissione inviatigli dagli utilizzatori
 }
 
 TcpConnHandler::~TcpConnHandler() {close(_sockId);}
@@ -71,6 +72,7 @@ void TcpConnHandler::Stop()
 {
     reader.Stop();
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,22)//eventFd is not available with this version so we have to do polling
+                                               //non c'e` eventFd x cui occorre aspettare il polling...
     reader.Join();
 #endif
 	Thread::Stop();
@@ -78,10 +80,9 @@ void TcpConnHandler::Stop()
 
 void TcpConnHandler::Join()
 {
-    if(alive()) {
-        reader.Join();
-        Thread::Stop();
-    } else reader.Stop();
+    //N.B.: non e` possibile che reader stia girando ma TcpConnHandler sia terminato.
+    reader.Join();
+    Thread::Stop();
 }
 
 TcpConnHandler::Reader::Reader(int sockId) : exit(false), _sockId(sockId)
@@ -111,6 +112,7 @@ void TcpConnHandler::Reader::run()
         if(select(nfds, &rdfs, NULL, NULL, NULL)==-1) ziblog(LOG::ERR, "select error (%s)", strerror(errno));
         else {
             if(FD_ISSET(_sockId, &rdfs)) {//available data on socket
+                                          //dati presenti sul socket
                 int len = 0;
                 if((len = read(_sockId, rxbyte, maxSize)) > 0) {
                     RawByteBufferData rx(rxDataLabel, rxbyte, len);
@@ -118,8 +120,13 @@ void TcpConnHandler::Reader::run()
                 } else if(len == 0) break; /* the peer has closed the socket. We have to exit thread loop.
                                             * We do not have to close socket here because it's up to the
                                             * destructor ~TcpConnHandler
+                                            * :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+                                            * il peer ha chiuso il socket. Esco dal loop del thread. La close
+                                            * del socket non devo farla qui perche' la fa gia' il distruttore
+                                            * di TcpConnHandler
                                             */
             } else if(FD_ISSET(efd, &rdfs)) {//stop event
+                                             //evento di stop
                 unsigned char exitFlag[8];
                 if(read(efd, exitFlag, 8)==-1) ziblog(LOG::ERR, "read from efd error (%s)", strerror(errno));
                 if(exitFlag[7]!=1) ziblog(LOG::ERR, "unexpected exitFlag value (%d)", exitFlag[7]);
@@ -145,12 +152,14 @@ void TcpConnHandler::Reader::run()
         FD_ZERO(&rdfs);
         FD_SET(_sockId, &rdfs);
 		tv.tv_sec = 1;//1 sec polling to catch any Stop()
+                      //1 sec di polling x eventuale Stop()
 		tv.tv_usec = 0;
         int ret = select(nfds, &rdfs, NULL, NULL, &tv);
 		if(ret) {
 			if (ret<0) ziblog(LOG::ERR, "select error (%s)", strerror(errno));
 			else {
 				if(FD_ISSET(_sockId, &rdfs)) {//available data on socket
+                                             //dati presenti sul socket
 					int len = 0;
 					if((len = read(_sockId, rxbyte, maxSize)) > 0) {
 						RawByteBufferData rx(rxDataLabel, rxbyte, len);
@@ -158,11 +167,19 @@ void TcpConnHandler::Reader::run()
 					} else if(len == 0) break; /* the peer has closed the socket. We have to exit thread loop.
                                                 * We do not have to close socket here because it's up to the
                                                 * destructor ~TcpConnHandler
-                                                */
+                                                * :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+                                                * il peer ha chiuso il socket. Esco dal loop del thread. La close
+												* del socket non devo farla qui perche' la fa gia' il distruttore
+												* di TcpConnHandler
+												*/
 				} /* N.B.: select returns if there are available data on socket and sets _sockId in rdfs, or
 				   * if timeout (1 sec in our case). So. if Stop() is called then exit is set to true and
                    * thread exits gently
-                   */
+                   * :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+                   * nota: la select ritorna se c'e` qualcosa sul socket, e nel caso setta _sockId in rdfs, oppure
+				   * per timeout (nel nostro caso impostato ad 1 secondo). Quindi se viene chiamato il metodo Stop()
+				   * questo imposta exit=true che permette l'uscita pulita dal thread.
+				   */
 			}
 		}
     }
@@ -210,11 +227,11 @@ TcpServer::~TcpServer() {close(_sockId);}
 
 TcpConnHandler* TcpServer::Accept()
 {
-    int sockTcpConnHandlerId = accept(_sockId, NULL, NULL);
+    int sockTcpConnHandlerId = accept(_sockId, NULL, NULL);//rimane bloccato qui sinche` non arriva una richiesta di connessione.
     if(sockTcpConnHandlerId < 0) {
         ziblog(LOG::ERR, "Connection Error (%s)", strerror(errno));
         return NULL;
-    } else return new TcpConnHandler(sockTcpConnHandlerId);
+    } else return new TcpConnHandler(sockTcpConnHandlerId);//istanzio il thread che gestisce la connessione
 }
 
 TcpClient::TcpClient(std::string& remoteAddr, int port)

@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -53,7 +53,7 @@ StopAndWaitOverUdp::StopAndWaitOverUdp(int udpPort)
 //------------------------------------------------------------------------------
 StopAndWaitOverUdp::~StopAndWaitOverUdp()
 {
-    Stop();
+    Stop();//in teoria non e` necessario perche` l'utilizzatore deve fare esplicitamente Stop() prima di delete...
     for (std::deque<UdpPkt*>::iterator it=ctxt->txQueue.begin(); it!=ctxt->txQueue.end(); ++it) {
         delete *it;
         *it=NULL;
@@ -72,7 +72,7 @@ StopAndWaitOverUdp::~StopAndWaitOverUdp()
 void StopAndWaitOverUdp::Start()
 {
     ctxt->srv->Start();
-    Thread::Start();
+    Thread::Start();//avvio di questo thread
 }
 //------------------------------------------------------------------------------
 void StopAndWaitOverUdp::Stop()
@@ -96,7 +96,7 @@ void StopAndWaitOverUdp::run()
                 UdpPkt* ev = (UdpPkt*)Ev;
                 if(ev->label()==ctxt->srv->getRxDataLabel()) changeState(state->dgramRxDataEventHndl(ctxt, ev));
                 else {
-                    changeState(state->sawDgramTxDataEventHndl(ctxt, ev));
+                    changeState(state->sawDgramTxDataEventHndl(ctxt, ev));//non puo` che essere label=this->getTxDataLabel()
                     if(!ctxt->txQueue.empty()) changeState(state->messageInTxQueueHndl(ctxt));
                 }
             } else if(dynamic_cast<TimeoutEvent *>(Ev)) changeState(state->ackTimeoutHndl(ctxt));
@@ -108,25 +108,25 @@ void StopAndWaitOverUdp::run()
     }
 }
 //==============================================================================
-//STATE MANAGEMENT
+//GESTIONE DEGLI STATI
 //------------------------------------------------------------------------------
-// FOR ALL STATE
+// TUTTI GLI STATI
 StopAndWaitOverUdpState* StopAndWaitOverUdpState::sawDgramTxDataEventHndl(StopAndWaitOverUdpStateContext* ctxt, const UdpPkt* const pkt)
 {
     std::string currentState=typeid(*this).name();
     ziblog(LOG::INF, "%s", (currentState+" - sawDgramTxDataEvent").c_str());
-    UdpPkt* tx = new UdpPkt(*pkt);
+    UdpPkt* tx = new UdpPkt(*pkt);//copia di pkt
     ctxt->txQueue.push_back(tx);
     ziblog(LOG::INF, "Message enqueued");
     ziblog(LOG::INF, "%s ==> %s",currentState.c_str(), currentState.c_str());
     return this;
 }
 //------------------------------------------------------------------------------
-//IDLE STATE
+//STATO IDLE
 StopAndWaitOverUdpState* StopAndWaitOverUdpIdleState::messageInTxQueueHndl(StopAndWaitOverUdpStateContext* ctxt)
 {
     ziblog(LOG::INF, "IDLE - messageInTxQueue");
-    UdpPkt* txData = ctxt->txQueue.front();
+    UdpPkt* txData = ctxt->txQueue.front();//il pop lo faccio solo dopo l'ack
     std::vector<unsigned char> sawTxData;
     StopAndWaitOverUdpStateContext::MessageType type=StopAndWaitOverUdpStateContext::DATA;
     sawTxData.push_back((unsigned char) type);
@@ -158,15 +158,15 @@ StopAndWaitOverUdpState* StopAndWaitOverUdpIdleState::dgramRxDataEventHndl(StopA
     StopAndWaitOverUdpStateContext::MessageType type=StopAndWaitOverUdpStateContext::ACK;
     ackToPeer.push_back((unsigned char) type);
     ackToPeer.push_back((unsigned char) messageId);
-    (UdpPkt(ctxt->srv->getTxDataLabel(), pkt->UdpPort(), pkt->IpAddr(), ackToPeer)).emitEvent();//ack to peer
+    (UdpPkt(ctxt->srv->getTxDataLabel(), pkt->UdpPort(), pkt->IpAddr(), ackToPeer)).emitEvent();//ack al peer
     ziblog(LOG::INF, "tx ACK to peer");
-    (UdpPkt(ctxt->rxDataLabel4user, pkt->UdpPort(), pkt->IpAddr(), rxData)).emitEvent();//rxData for user
+    (UdpPkt(ctxt->rxDataLabel4user, pkt->UdpPort(), pkt->IpAddr(), rxData)).emitEvent();//rxData x user
     ziblog(LOG::INF, "emit data event 4 user");
     ziblog(LOG::INF, "IDLE ==> IDLE");
     return this;
 }
 //------------------------------------------------------------------------------
-//WAIT4ACK STATE
+//STATO WAIT4ACK
 StopAndWaitOverUdpState* StopAndWaitOverUdpWait4AckState::messageInTxQueueHndl(StopAndWaitOverUdpStateContext* ctxt)
 {
     ziblog(LOG::INF, "WAIT4ACK - messageInTxQueueHndl");
@@ -180,22 +180,25 @@ StopAndWaitOverUdpState* StopAndWaitOverUdpWait4AckState::ackTimeoutHndl(StopAnd
     ziblog(LOG::INF, "WAIT4ACK - ackTimeout");
     if(++ctxt->retryN<3) {
         ziblog(LOG::INF, "RETRY N %d", ctxt->retryN);
-        UdpPkt* txData = ctxt->txQueue.front();
+        UdpPkt* txData = ctxt->txQueue.front();//il pop lo faccio solo dopo l'ack
         std::vector<unsigned char> sawTxData;
         StopAndWaitOverUdpStateContext::MessageType type=StopAndWaitOverUdpStateContext::DATA;
         sawTxData.push_back((unsigned char) type);
         sawTxData.push_back((unsigned char) ctxt->messageId);//same messageId: it's a retransmission!
+                                                             //messageId e` lo stesso: e` una ritrasmissione!
         for(int i=0; i<txData->len(); i++) sawTxData.push_back((txData->buf())[i]);
         (UdpPkt(ctxt->srv->getTxDataLabel(), txData->UdpPort(), txData->IpAddr(), sawTxData)).emitEvent();
         ctxt->ackTimer->Start();
         ziblog(LOG::INF, "WAIT4ACK ==> WAIT4ACK");
         return this;
     } else {//no retries available
+            //tentativi esauriti
         ctxt->retryN=0;
-        UdpPkt* txData = ctxt->txQueue.front();
+        UdpPkt* txData = ctxt->txQueue.front();//trash the datagram for which the transmission has failed
+                                               //prendo dal pacchetto fallito i dati per l'emissione dell'errore
         int udpPort=txData->UdpPort();
         std::string destIpAddr=txData->IpAddr();
-        ctxt->txQueue.pop_front();//trash the datagram for which the transmission has failed
+        ctxt->txQueue.pop_front();//elimino il pacchetto di cui e` fallita la trasmissione
         ziblog(LOG::INF, "first message removed from txQueue");
         ziblog(LOG::ERR, "TX ERROR");
         (sawUdpPktError(udpPort, destIpAddr)).emitEvent();
@@ -220,8 +223,8 @@ StopAndWaitOverUdpState* StopAndWaitOverUdpWait4AckState::dgramRxDataEventHndl(S
         StopAndWaitOverUdpStateContext::MessageType type=StopAndWaitOverUdpStateContext::ACK;
         ackToPeer.push_back((unsigned char) type);
         ackToPeer.push_back((unsigned char) messageId);
-        (UdpPkt(ctxt->srv->getTxDataLabel(), pkt->UdpPort(), pkt->IpAddr(), ackToPeer)).emitEvent();//ack to peer
-        (UdpPkt(ctxt->rxDataLabel4user, pkt->UdpPort(), pkt->IpAddr(), rxData)).emitEvent();//rxData for user
+        (UdpPkt(ctxt->srv->getTxDataLabel(), pkt->UdpPort(), pkt->IpAddr(), ackToPeer)).emitEvent();//ack al peer
+        (UdpPkt(ctxt->rxDataLabel4user, pkt->UdpPort(), pkt->IpAddr(), rxData)).emitEvent();//rxData x user
         ziblog(LOG::INF, "WAIT4ACK ==> WAIT4ACK");
         return this;
     } else if((StopAndWaitOverUdpStateContext::MessageType)messageType == StopAndWaitOverUdpStateContext::ACK) {
@@ -231,22 +234,25 @@ StopAndWaitOverUdpState* StopAndWaitOverUdpWait4AckState::dgramRxDataEventHndl(S
             ziblog(LOG::ERR, "ack messageId mismatch");
             if(++ctxt->retryN<3) {
                 ziblog(LOG::INF, "RETRY N %d", ctxt->retryN);
-                UdpPkt* txData = ctxt->txQueue.front();
+                UdpPkt* txData = ctxt->txQueue.front();//il pop lo faccio solo dopo l'ack
                 std::vector<unsigned char> sawTxData;
                 StopAndWaitOverUdpStateContext::MessageType type=StopAndWaitOverUdpStateContext::DATA;
                 sawTxData.push_back((unsigned char) type);
                 sawTxData.push_back((unsigned char) ctxt->messageId);//same messageId: it's a retransmission!
+                                                                     //messageId e` lo stesso: e` una ritrasmissione!
                 for(int i=0; i<txData->len(); i++) sawTxData.push_back((txData->buf())[i]);
                 (UdpPkt(ctxt->srv->getTxDataLabel(), txData->UdpPort(), txData->IpAddr(), sawTxData)).emitEvent();
                 ctxt->ackTimer->Start();
                 ziblog(LOG::INF, "WAIT4ACK ==> WAIT4ACK");
                 return this;
             } else {//no retries available
+                    //tentativi esauriti
                 ctxt->retryN=0;
-                UdpPkt* txData = ctxt->txQueue.front();
+                UdpPkt* txData = ctxt->txQueue.front();//prendo dal pacchetto fallito i dati per l'emissione dell'errore
                 int udpPort=txData->UdpPort();
                 std::string destIpAddr=txData->IpAddr();
                 ctxt->txQueue.pop_front();//trash the datagram for which the transmission has failed
+                                          //elimino il pacchetto di cui e` fallita la trasmissione
                 ziblog(LOG::ERR, "TX ERROR");
                 (sawUdpPktError(udpPort, destIpAddr)).emitEvent();
                 ziblog(LOG::INF, "first message removed from txQueue");

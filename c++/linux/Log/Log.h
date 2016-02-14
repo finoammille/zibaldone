@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -50,6 +50,16 @@
 // 3) you have to call LOG::disable() to disable log.
 //    LOG::disable() closes the log file, stops the log thread (whose task is to serialize
 //    the log requests) and deallocates the memory.
+//
+//:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+//
+// Utilizzo di log:
+// 1) chiamare LOG::set() per impostare la directory in cui andranno i log, il prefisso
+//    per il file di log, il livello di log, la dimensione del buffer di log, se
+//    visualizzare i log anche su console (di default il log parte disabilitato)
+// 2) una volta abilitato il log chiamare ziblog per loggare
+// 3) chiamare LOG::disable() per terminare il log e disabilitarlo (disable chiude il file
+//    di log, stoppa il thread che serializza le richieste di log e dealloca la memoria
 
 namespace Z
 {
@@ -57,7 +67,7 @@ namespace Z
 class LOG : public Thread {
     LOG(const std::string&, const std::string&);
     static int _bufferSize;
-    static bool _isRunning;
+    static pthread_mutex_t _lock;
     std::ofstream logFile;
     static LOG* _instance;
     bool exit;
@@ -74,7 +84,7 @@ public:
 #define ziblog(level, logMsg, arg...) \
 ({ \
     const int ziblogMaxLogSize=LOG::bufferSize(); \
-    char bUfFeR[ziblogMaxLogSize]; \
+    char* bUfFeR = new char[ziblogMaxLogSize]; \
     if (snprintf(bUfFeR, ziblogMaxLogSize, (logMsg), ##arg) >= ziblogMaxLogSize) { \
         std::string truncatedWarning="...TRUNCATED!"; \
         int warningMsgLen = truncatedWarning.length(); \
@@ -104,10 +114,20 @@ public:
     position+=", "; \
     position+=__PRETTY_FUNCTION__; \
     position+=": "; \
-    std::string msg = bUfFeR; \
+    std::string msg(bUfFeR); \
+    delete[] bUfFeR; \
     std::string log = timestamp + logLevel + position + msg; \
     LOG::enqueueMessage(level, log); \
 })
 //-------------------------------------------------------------------------------------------
 }//namespace Z
 #endif	/* _LOG_H */
+
+/*
+NOTA: mi e` capitato di avere un conflitto sul nome a causa buffer definito nella macro ziblog!
+Trattandosi di una macro, e` difficile accorgersi del problema e l'errore dato dal compilatore
+sembra strano ... invece ha ragione!
+Usare "buffer" non e` una buona idea dato che si tratta di un nome utilizzato frequentemente.
+Per ridurre la probabilita` di avere problemi analoghi in futuro, ho rinominato buffer come
+bUfFeR, che difficilmente sara` usato!!!!
+*/

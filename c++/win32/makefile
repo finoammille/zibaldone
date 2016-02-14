@@ -4,7 +4,7 @@
 #
 # http://sourceforge.net/projects/zibaldone/
 #
-# version 3.1.2, August 29th, 2015
+# version 3.2.0, February 14th, 2016
 #
 # Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
 #
@@ -31,20 +31,20 @@
 SHELL=/bin/bash
 
 ifeq ($(shell uname), Linux)
-	# mingw cross compiler on linux
+	# mingw cross compiler su linux
 	CC = i686-w64-mingw32-g++
 	#CC = i486-mingw32-gcc
 	AR = i686-w64-mingw32-ar
 	#AR = i486-mingw32-ar
 else
-	# use of mingw on windows
+	# utilizzo di mingw su windows
     CC = g++
 	AR = ar
 endif
 
 #---------------------------------------------------------------------------
 
-CFLAGS = -Wall -Werror -O0 -g -Wl,--subsystem,windows -DDEBUG
+CXXFLAGS = -Wall -Werror -O0 -g -Wl,--subsystem,windows -DDEBUG -D_ZDEBUG -D_REENTRANT
 
 #---------------------------------------------------------------------------
 
@@ -124,9 +124,11 @@ OBJ = Thread/Thread.o \
 # targets
 %.o: %.cpp $(DEPS)
 	@echo "building $@"
-	$(CC) -c -o $@ $< $(DFLAGS) $(CFLAGS) $(IFLAGS)
+	$(CC) -c -o $@ $< $(DFLAGS) $(CXXFLAGS) $(IFLAGS)
+#nota: $@ e' il nome del target (%.o), $< e' il nome della prima dipendenza (%.cpp)
 
 zibaldone: zibaldoneDynamic zibaldoneStatic
+#nota: $^ e' la lista delle dipendenze ($(OBJ))
 
 zibaldoneDynamic: $(OBJ)
 	@echo "building $@"
@@ -140,3 +142,4 @@ zibaldoneStatic: $(OBJ)
 
 clean:
 	rm -f ./build/zibaldoneWin32.dll ./build/libzibaldoneWin32.a $(OBJ)
+

@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -80,6 +80,7 @@ Udp::Udp(int port):udpPort(port)
     reader._addr=_addr;
     reader.exit=false;
     register2Label(getTxDataLabel());//self-registration to transmission request event emitted by class-users
+                                     //autoregistrazione sugli eventi di richiesta di trasmissione inviatigli dagli utilizzatori
 }
 
 Udp::~Udp()
@@ -129,18 +130,19 @@ void Udp::Stop()
 
 void Udp::Join()
 {
-    if(alive()) {
-        reader.Join();
-        Thread::Stop();
-    } else reader.Stop();
+    //N.B.: non e` possibile che reader stia girando ma TcpConnHandler sia terminato.
+    reader.Join();
+    Thread::Stop();
 }
 
 void Udp::Reader::run()
 {
     std::stringstream sap;
     sap<<_sockId;
-    std::string rxDataLabel = "dgramRxDataEvent"+sap.str();//REM!! it must = Udp::getRxDataLabel()
+    std::string rxDataLabel = "dgramRxDataEvent"+sap.str();//REM!! deve essere = a quella ritornata da Udp::getRxDataLabel()
+                                                           //REM!! deve essere = a quella ritornata da Udp::getRxDataLabel()
     const int maxSize = 1024;//we choose to set 1 kb max each datagram ... if not enough u can modify this....
+                             //1 kb max payload a pacchetto... se non basta, modificare qui!
     unsigned char rxbyte[maxSize];
     fd_set rdfs;//file descriptor set
 	TIMEVAL tv={0};
@@ -155,6 +157,7 @@ void Udp::Reader::run()
 			if(ret==SOCKET_ERROR) ziblog(LOG::ERR, "select error (%d)", WSAGetLastError());
 			else {
 				if(FD_ISSET(_sockId, &rdfs)) {//available data on socket
+                                              //dati presenti sul socket
 					int len = 0;
 					socklen_t address_len = sizeof(_addr);
 					if((len = recvfrom(_sockId, (char*)rxbyte, maxSize, 0, (sockaddr*)&_addr, &address_len)) > 0) {
@@ -163,9 +166,13 @@ void Udp::Reader::run()
 						UdpPkt rx(rxDataLabel, senderUdpPort, senderIpAddr, rxbyte, len);
 						rx.emitEvent();
 					}
-				} /* note: select returns if there are available data on socket and in that case sets _sockId in rdfs,
-				   * or because of timeout (in our case set to 1 sec). Therefore if the Stop() method has been called
-                   * then exit=true that allows a fair thread exit
+				} /* N.B.: select returns if there are available data on socket and sets _sockId in rdfs, or
+				   * if timeout (1 sec in our case). So. if Stop() is called then exit is set to true and
+                   * thread exits gently
+                   * :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+                   * nota: la select ritorna se c'e` qualcosa sul socket, e nel caso setta _sockId in rdfs, oppure
+				   * per timeout (nel nostro caso impostato ad 1 secondo). Quindi se viene chiamato il metodo Stop()
+				   * questo imposta exit=true che permette l'uscita pulita dal thread.
 				   */
 			}
 		}

@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -54,7 +54,9 @@ public:
 private:
     struct termios _serialPortSettings;
     bool Open(const std::string&);
-    void SetBaudRate(int);
+    void SetBaudRate(int);//NOTA: tutti i metodi che modificano i parametri della seriale (SetBaudRate, SetFlowControl, ...) ovviamente
+                          //possono essere usati solamente dopo la open. Non metto controlli in tal senso perche' tali metodi sono privati
+                          //all'interno di SerialPort, e li uso solo io (che so come usarli!)
     void SetFlowControl(FlowControl);
     void SetDataBits(int);
     void SetStopBits(int);

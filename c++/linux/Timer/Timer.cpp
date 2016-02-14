@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -54,7 +54,7 @@ void Timer::Start(int mSec)
 {
     if(mSec!=-1) _duration = mSec;
     if(!_duration) {
-        ziblog(LOG::WRN, "timer %s has non valid duration value", timerId.c_str());
+        ziblog(LOG::WRN, "timer %s has non valid duration value", timerId.c_str());//se sono qui, nè il costruttore ne il chiamante di Start hanno assegnato un valore utile a _duration
         return;
     }
     pthread_mutex_lock(&_lock);

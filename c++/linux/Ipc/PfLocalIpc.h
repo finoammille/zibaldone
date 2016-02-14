@@ -4,7 +4,7 @@
  *
  * http://sourceforge.net/projects/zibaldone/
  *
- * version 3.1.2, August 29th, 2015
+ * version 3.2.0, February 14th, 2016
  *
  * Copyright (C) 2012  ilant (ilant@users.sourceforge.net)
  *
@@ -68,6 +68,32 @@ Use:
 5) to transmit data over the connection you have to emit an Event of type
    RawByteBufferData with label set to the label returned by the
    ConnHandler::getTxDataLabel() method
+
+:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+Utilizzo:
+
+1) istanziare un oggetto PfLocalServer specificando la porta "P" di ascolto
+2) istanziare un oggetto PfLocalClient specificando l'IP e la porta "P" su
+   cui e` in ascolto il server
+3) per connettere client con server, chiamare Accept() sul server e
+   successivamente chiamare Connect() sul client. Entrambi i metodi
+   restituiscono (rispettivamente su server e client) un puntatore ad
+   un oggetto PfLocalConnHandler
+4) per ricevere dati da una connessione occorre registrarsi sull'evento
+   di tipo RawByteBufferData il cui id viene restituito dal metodo
+   getRxDataLabel() di PfLocalConnHandler
+5) per trasmettere dati occorre emettere un Evento di tipo RawByteBufferData
+   con label uguale a quello restituito dal metodo getTxDataLabel() di
+   ConnnHandler.
+
+TODO: Il PfLocalServer rimane in ascolto su una singola porta/IpcSocketName, una volta instaurata
+      la connessione, il server non e` piu` in ascolto. Per implementare un server che
+      gestisce piu` connessioni occorre implementare una classe che generi un nuovo server
+      ad ogni richiesta di connessione su cui passa la richiesta spostandola su una nuova
+      porta, per poi tornare in ascolto sulla porta originale per una nuova richiesta
+      da gestire!
+
 */
 
 namespace Z
@@ -78,16 +104,16 @@ class PfLocalConnHandler : public Thread {
     friend class PfLocalClient;
     int _sockId;
     std::string _IpcSocketName;
-    std::string _sap;
+    std::string _sap;//serve per taggare univocamente gli eventi relativi ad uno specifico socket
     bool exit;
-    void run();
+    void run();//ciclo del thread che gestisce la scrittura
     class Reader : public Thread {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,22)
         int efd; //Event file descriptor
 #endif
         bool exit;
         int _sockId;
-        void run();
+        void run();//ciclo del thread per la lettura
     public:
         Reader(int);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,22)
@@ -96,14 +122,14 @@ class PfLocalConnHandler : public Thread {
         void Start();
         void Stop();
     } reader;
-    PfLocalConnHandler(int sockId, const std::string& IpcSocketName="");
+    PfLocalConnHandler(int sockId, const std::string& IpcSocketName="");//PfLocalConnHandler non deve essere istanziabile, ma solo ottenibile effettuando una connessione.
 public:
     ~PfLocalConnHandler();
     void Start();
     void Stop();
     void Join();
-    std::string getTxDataLabel(){return "txDataEvent"+_sap;}
-    std::string getRxDataLabel(){return "rxDataEvent"+_sap;}
+    std::string getTxDataLabel(){return "txDataEvent"+_sap;}//id dell'evento di richiesta trasmissione dati sul socket (evento ricevuto e gestito da PfLocalConnHandler)
+    std::string getRxDataLabel(){return "rxDataEvent"+_sap;}//id dell'evento di notifica ricezione dati sul socket (evento emesso da PfLocalConnHandler)
 };
 
 class PfLocalServer {
@@ -116,14 +142,22 @@ public:
 private:
     /*
      * the well known big 3 rule of C++ says:
-     * "if your class needs to define the destructor or the copy constructor or the copy
-     * assigment operator then it should probably explicitly define all three"
+     * "if your class needs to define the destructor or the copy constructor or the
+     * copy assigment operator then it should probably explicitly define all three"
      * In our case since a Thread cannot be assigned or copied, we declare the
      * copy constructor and the assignment operator as private. This way we can
      * prevent and easily detect any inadverted abuse
+     * :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+     * secondo la "Law of The Big Three" del c++, se si definisce uno tra:
+     * distruttore, costruttore di copia o operatore di assegnazione,
+     * probabilmente occorrera' definire anche i due restanti (e non usare
+     * quelli di default cioe`!). Tuttavia in questo caso un Thread non puo`
+     * essere assegnato o copiato, per cui il rispetto della suddetta regola
+     * avviene rendendoli privati in modo da prevenirne un utilizzo
+     * involontario!
      */
-    PfLocalServer(const PfLocalServer &);
-    PfLocalServer & operator = (const PfLocalServer &);
+    PfLocalServer(const PfLocalServer &);//non ha senso ritornare o passare come parametro un Socket PfLocalServer per valore
+    PfLocalServer & operator = (const PfLocalServer &);//non ha senso assegnare un Socket PfLocalServer per valore
 };
 
 class PfLocalClient {
@@ -137,14 +171,22 @@ public:
 private:
     /*
      * the well known big 3 rule of C++ says:
-     * "if your class needs to define the destructor or the copy constructor or the copy
-     * assigment operator then it should probably explicitly define all three"
+     * "if your class needs to define the destructor or the copy constructor or the
+     * copy assigment operator then it should probably explicitly define all three"
      * In our case since a Thread cannot be assigned or copied, we declare the
      * copy constructor and the assignment operator as private. This way we can
      * prevent and easily detect any inadverted abuse
+     * :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+     * secondo la "Law of The Big Three" del c++, se si definisce uno tra:
+     * distruttore, costruttore di copia o operatore di assegnazione,
+     * probabilmente occorrera' definire anche i due restanti (e non usare
+     * quelli di default cioe`!). Tuttavia in questo caso un Thread non puo`
+     * essere assegnato o copiato, per cui il rispetto della suddetta regola
+     * avviene rendendoli privati in modo da prevenirne un utilizzo
+     * involontario!
      */
-    PfLocalClient(const PfLocalClient &);
-    PfLocalClient & operator = (const PfLocalClient &);
+    PfLocalClient(const PfLocalClient &);//non ha senso ritornare o passare come parametro un Socket PfLocalClient per valore
+    PfLocalClient & operator = (const PfLocalClient &);//non ha senso assegnare un Socket PfLocalClient per valore
 };
 //-------------------------------------------------------------------------------------------
 }//namespace Z
