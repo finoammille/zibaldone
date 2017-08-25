@@ -1,0 +1,91 @@
+# set LD_LIBRARY_PATH to the path of libzibaldone.so
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:../../zibaldone/c++/linux/build/
+
+
+#esempi: 
+# ./zibTest --debug --testSocket
+# ./zibTest --testSocket --debug
+# ./zibTest --testSocket --showLog=true
+# ./zibTest --testSocket --logLevel=debug --showLog=false
+# ./zibTest --testSocket --logLevel=error --showLog=true
+
+
+
+function startTest {
+    debug=false
+    params=""
+    
+    #estraggo l'opzione di debugging se c'e`
+    for var in "$@"
+    do
+        if [ $var == "--debug" ]; then
+            debug=true
+        else
+            params+=" "$var
+        fi
+    done
+
+    if $debug; then
+        cmd="gdb --args "
+    fi
+    cmd+="./build/zibTests "
+    cmd+=$params
+    #echo $cmd
+    $cmd
+}
+
+#get argument list
+count=0
+for ops in "$@"
+do
+    cmds[$count]="$ops"
+    let count+=1
+done
+#launch selected test
+startTest "${cmds[@]}"
+
+#........................................................................................................................................
+
+#	test Tools
+#gdb --args ./build/ --testTools
+#./build/zibTests --testTools
+
+#........................................................................................................................................
+
+#	test socket ipc
+#gdb --args ./build/zibTests --testIpcSocket
+#./build/zibTests --testIpcSocket
+
+#........................................................................................................................................
+
+#	test serial port
+#gdb --args ./build/zibTests --testSerialPort /dev/ttyS0 115200 8 none 1 xonxoff
+#./build/zibTests --testSerialPort /dev/ttyS0 115200 8 none 1 xonxoff
+
+#........................................................................................................................................
+
+#	test socket
+#gdb --args ./build/zibTests --testSocket
+#./build/zibTests --testSocket
+
+#........................................................................................................................................
+
+#	test thread
+#gdb --args ./build/zibTests --testThreads
+#./build/zibTests --testThreads
+
+#........................................................................................................................................
+
+#	test timer
+#gdb --args ./build/zibTests --testTimers
+#./build/zibTests --testTimers
+
+#........................................................................................................................................
+
+# TEST dell'applicativo con valgrind
+
+#valgrind --tool=memcheck --leak-check=yes --show-reachable=yes --num-callers=20 --track-fds=yes -v ./build/zibTests 2>&1 | tee valgrind.log
+#valgrind --tool=memcheck ./build/zibTests 2>&1 | tee valgrind.log
+#./build/zibTests
+
+#........................................................................................................................................
