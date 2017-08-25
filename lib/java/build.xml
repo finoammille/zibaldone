@@ -1,0 +1,113 @@
+<!--
+	zibaldone - a C++/Java library for Thread, Timers and other Stuff
+
+	http://sourceforge.net/projects/zibaldone/
+
+	version 3.1.2, August 29th, 2015
+
+	Copyright (C) 2012  bucc4neer (bucc4neer@users.sourceforge.net)
+
+	This software is provided 'as-is', without any express or implied
+	warranty.  In no event will the authors be held liable for any damages
+	arising from the use of this software.
+
+	Permission is granted to anyone to use this software for any purpose,
+	including commercial applications, and to alter it and redistribute it
+	freely, subject to the following restrictions:
+
+	1. The origin of this software must not be misrepresented; you must not
+	   claim that you wrote the original software. If you use this software
+       in a product, an acknowledgment in the product documentation would be
+	   appreciated but is not required.
+	2. Altered source versions must be plainly marked as such, and must not be
+	   misrepresented as being the original software.
+	3. This notice may not be removed or altered from any source distribution.
+
+	bucc4neer bucc4neer@users.sourceforge.net
+-->
+
+<project>
+
+    <!-- taskdef per utilizzare ant-contrib -->
+    <taskdef resource="net/sf/antcontrib/antlib.xml"/>
+
+	<property name="src" location="Z"/>
+	<property name="build" location="build"/>
+	<property name="rxtxPackagePath" location="/usr/share/java/rxtx/RXTXcomm.jar"/>
+
+
+    <target name="clean">
+		<delete includeemptydirs="true">
+			<fileset dir="${build}" includes="**/*"/>
+		</delete>
+	</target>
+
+    <condition property="rxtxPackageAvailable">
+        <and>
+            <available classpath="${rxtxPackagePath}" classname="gnu.io.SerialPort"/>
+            <available classpath="${rxtxPackagePath}" classname="gnu.io.CommPortIdentifier"/>
+            <available classpath="${rxtxPackagePath}" classname="gnu.io.SerialPortEventListener"/>
+            <available classpath="${rxtxPackagePath}" classname="gnu.io.SerialPortEvent"/>
+            <available classpath="${rxtxPackagePath}" classname="gnu.io.UnsupportedCommOperationException"/>
+        </and>
+    </condition>
+
+    <macrodef name="compile">
+        <attribute name="target"/>
+        <attribute name="source"/>
+        <attribute name="bootclasspath"/>
+        <sequential>
+            <javac target="@{target}" source="@{source}" bootclasspath="@{bootclasspath}" includeantruntime="false" srcdir="${src}" destdir="${build}" classpath="${rxtxPackagePath}" debug="true" debuglevel="lines,vars,source" >
+                <compilerarg value="-Xlint:unchecked"/>
+                <include name="**/*.java"/>
+                <exclude name="Utils/SerialPortHandler.java" unless="${rxtxPackageAvailable}"/>
+            </javac>
+        </sequential>
+    </macrodef>
+
+    <!-- private target. Thanks to "-", it's not possibile to invoke "-archive" target externally!!! -->
+    <target name="-archive">
+        <jar destfile="${build}/zibaldone.jar">
+            <zipfileset dir="${build}" includes="**/*.class"/>
+            <manifest>
+                <attribute name="Main-Class" value="Main"/>
+            </manifest>
+        </jar>
+		<delete>
+			<fileset dir="${build}" includes="*.class"/>
+		</delete>
+	</target>
+
+	<target name="build">
+        <if>
+            <not>
+                <isset property="rxtxPackageAvailable"/><!-- if rxtxPackageAvailable is NOT set, i.e. rxtx not available, then echo-->
+            </not>
+            <then>
+                <echo>
+                rxtxPackage is not available! If you 
+                want to force compiling with rxtxPackage 
+                and you know the path to the package, you 
+                can try building with the command:
+
+                ant -DrxtxPackageAvailable="true" -DrxtxPackagePath="path-to-rxtxPackage-" build 
+                </echo>
+            </then>
+        </if>
+        <compile target="1.7" source="1.7" bootclasspath="${java.home}/lib/rt.jar"/>
+        <antcall target="-archive"> </antcall>
+	</target>
+
+	<target name="buildLegacy">
+        <compile target="1.6" source="1.6" bootclasspath="${java.home}/lib/rt.jar"/>
+        <antcall target="-archive"> </antcall>
+	</target>
+
+    <!--
+    todo: modificare build togliendo opzione debug che va messa solo qui.
+    <target name="debug">
+        <compile target="1.7" source="1.7" bootclasspath="${java.home}/lib/rt.jar"/>
+    </target>
+    -->
+
+</project>
