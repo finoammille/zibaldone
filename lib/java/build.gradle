@@ -1,0 +1,25 @@
+// https://stackoverflow.com/questions/19391872/how-to-compile-a-single-java-file-with-gradle
+//https://www.tutorialspoint.com/groovy/groovy_file_io.htm
+
+
+apply plugin: 'java'
+sourceSets {
+    main {
+        java{
+            srcDirs = ['Z']
+        }
+    }
+}
+
+dependencies {
+    compile fileTree(dir: '/usr/share/java/rxtx/', include: ['RXTXcomm.jar'])
+}
+
+jar {
+   destinationDir = file('build/')
+   baseName 'zibaldone'
+}
+
+clean.doLast {
+    new File('build').mkdirs()
+}
